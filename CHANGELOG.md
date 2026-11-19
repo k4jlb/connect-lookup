@@ -3,6 +3,14 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-19 (version 1.2)
+- Fixed: a station connected straight to your node could show a dash under
+  "Connected through" instead of "Direct". If one direct link (an EchoLink
+  station, for example) had an empty address column in the node's link list,
+  the page stopped reading the list at that line and lost every link after it.
+  The list is now read from the right-hand end of each line, and a line it
+  cannot read is skipped instead of stopping the rest.
+
 ## 2026-11-19
 - New: a checkbox at the top of the page, "Outline the stations behind a link
   while that link is transmitting". It is off until you tick it, and your

@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.1"
+VERSION="1.2"
 MARK="connect-lookup-installer-v1"
 CUSTOM=/etc/asterisk/custom
 LOGDIR=/var/log/asterisk/node-history
@@ -119,7 +119,9 @@ while true; do
   now=$(date +%s)
   OLD=()
   while read -r n s; do OLD[$n]=$s; done < <(cat $D/direct.txt 2>/dev/null)
-  /usr/sbin/asterisk -rx "rpt lstats @NODE@" 2>/dev/null | grep -E " (IN|OUT) " | while read -r n peer rc dir ct st; do
+  /usr/sbin/asterisk -rx "rpt lstats @NODE@" 2>/dev/null | grep -E " (IN|OUT) " | while read -r -a f; do
+    n=${f[0]}; ct=${f[${#f[@]}-2]}
+    [[ $ct =~ ^[0-9]+:[0-9]+:[0-9]+:[0-9]+$ ]] || continue
     IFS=: read -r h m s ms <<< "$ct"
     t=$((now - 10#$h*3600 - 10#$m*60 - 10#$s))
     o=${OLD[$n]:-0}; d=$((t-o)); if [ ${d#-} -le 3 ]; then t=$o; fi
