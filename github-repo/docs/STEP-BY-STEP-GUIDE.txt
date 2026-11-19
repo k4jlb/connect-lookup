@@ -1,0 +1,226 @@
+CONNECT LOOKUP  -  for AllStarLink 3 (ASL3) nodes
+Built by K4JLB
+
+WHAT IT IS
+A web page on your own node that shows, live, who is connected to your node
+right now, and who connected during the last 24 hours:
+
+  - node, callsign (click it to open the QRZ page), and the operator's name
+  - "Connected through": Direct, or which node the station comes through
+  - description / location, time connected, and how long
+  - EchoLink stations in light blue; web-transceiver callsigns work too and
+    are labelled "Web Transceiver"
+  - a red box around a station's row while it is transmitting (for stations
+    linked directly to your node; it stays on for about two seconds)
+  - an OPTIONAL checkbox at the top of the page that also outlines, faintly,
+    the stations behind that link while it is transmitting (off until you tick
+    it - see "THE OPTIONAL OUTLINE CHECKBOX" below)
+  - a count beside each heading; the page refreshes itself every few seconds
+
+It installs by typing ONE thing: your own node number.
+
+==========================================================================
+BEFORE YOU START - write these three things down
+==========================================================================
+  1. YOUR NODE NUMBER        (example used below: 123456)
+  2. YOUR LOGIN NAME on the node   (the name you use to log in, for example
+                                    pi, asl, admin or your callsign)
+  3. YOUR NODE'S ADDRESS     (its IP address, for example 192.168.1.50, or its
+                              Tailscale address if you use Tailscale)
+
+Wherever you see 123456, 192.168.1.50 or YOURLOGIN below, use YOUR OWN.
+
+You also need: an ASL3 node with Asterisk running, the Apache web server with
+PHP (the one your node's other web pages already use), and "sudo" on the node.
+The first check below tells you right away if something is missing.
+
+ONE WINDOW - WHICH PROMPT AM I AT?
+You use ONE window for everything (PowerShell on Windows, Terminal on Mac).
+What the window is doing depends on the prompt you see:
+  - BEFORE you log in (steps 2 and 3), the prompt is your own PC's, for
+    example   PS C:\Users\you>   . Commands run on your PC.
+  - AFTER you log in (step 3), the prompt changes to   yourlogin@nodename:~$
+    From then on, everything you type in that same window runs on the node.
+Rule: commands that start with "sudo" go at the   yourlogin@nodename:~$
+prompt. (Windows says "Sudo is disabled on this machine" if you type sudo at
+your PC's prompt. That only means you are not logged in to the node yet, so do
+step 3 first.)
+
+Every command below goes on its own line. Type it (or copy and paste it),
+press Enter, and wait for it to finish before typing the next one.
+
+==========================================================================
+STEP BY STEP
+==========================================================================
+
+STEP 1 - Save the file where you can find it
+  Save install-connect-lookup.sh in your Downloads folder.
+
+STEP 2 - Copy it to your node (on YOUR PC)
+  Windows: click Start, type  PowerShell  and press Enter.
+  Mac:     open Terminal.
+  Then type this, using YOUR login name and YOUR node's address:
+
+    Windows PowerShell:
+      scp $HOME\Downloads\install-connect-lookup.sh YOURLOGIN@192.168.1.50:~/
+
+    Mac or Linux:
+      scp ~/Downloads/install-connect-lookup.sh YOURLOGIN@192.168.1.50:~/
+
+  - The first time it may ask "Are you sure you want to continue connecting
+    (yes/no)?"   Type  yes  and press Enter. That is normal.
+  - It asks for your node's password. Nothing shows while you type it. That is
+    normal. Press Enter.
+  - When it works you see  install-connect-lookup.sh  100%  and you are back
+    at the prompt.
+  (Prefer drag and drop? WinSCP or FileZilla can copy the file to your node's
+   home folder instead. Same result.)
+
+STEP 3 - Log in to the node (still in the same window)
+    ssh YOURLOGIN@192.168.1.50
+  Enter the password. When the prompt changes to something like
+  yourlogin@nodename:~$   you are on the node.
+
+STEP 4 - Make a safety copy of your node's settings (recommended)
+    sudo cp -a /etc/asterisk /root/asterisk-before-connect-lookup
+  It prints nothing when it works. (If you already have a folder with that
+  name, add today's date on the end.)
+
+STEP 5 - Check only (changes NOTHING)
+    sudo bash install-connect-lookup.sh 123456 --check
+  You should see a list of lines starting with "-", ending with:
+    All checks passed. Nothing was changed.
+  If a line says WARNING it is a heads-up, not a stop. If it says something is
+  missing, see "If something goes wrong" below.
+
+STEP 6 - Install
+    sudo bash install-connect-lookup.sh 123456
+  It shows what it is going to do and asks:
+    Install Connect Lookup for node 123456?
+    Type  y  and press Enter to go ahead, or just press Enter to cancel:
+  Type  y  and press Enter. It takes about a minute and prints six steps. At
+  the end it says "Done" and prints the web address to open.
+
+STEP 7 - Open the page
+  In a web browser on any computer on your network, open the address it
+  printed, for example:
+    http://192.168.1.50/connect-lookup/
+  You should see "Connect Lookup - Node 123456" with two tables:
+  "Connected now" and "Last 24 hours". It starts empty and fills in.
+
+STEP 8 - Try it
+  Connect your node to another node the way you normally do (for example
+  dial *3 and a node number). Within a few seconds that node appears under
+  "Connected now". Stations behind it appear with their callsign, location and
+  "Connected through". When someone disconnects, they move to "Last 24 hours"
+  (this can take up to about half a minute for stations behind other nodes).
+
+That is all. It starts by itself every time the node boots.
+
+==========================================================================
+IF SOMETHING GOES WRONG
+==========================================================================
+  "Sudo is disabled on this machine"
+      You typed it on your Windows PC. Do step 3 first, then type it on the node.
+
+  "Please run this with sudo"
+      Put the word  sudo  in front: sudo bash install-connect-lookup.sh ...
+
+  "No such file"  or  "can't open file"
+      The file is not in the folder you are in. On the node type  ls  and
+      check that install-connect-lookup.sh is listed. If not, redo step 2.
+
+  Errors about "\r" or "Windows line endings"
+      The file got changed on its way to you. Run this one command, then run
+      the install again:
+        sed -i 's/\r$//' install-connect-lookup.sh
+
+  "PHP does not seem to be enabled in Apache" or "Apache ... not found"
+      Your node's web pages use a different web setup than the installer
+      expects. Nothing was changed. Send the exact message to the person who
+      gave you this.
+
+  "already exists and was not created by this installer"
+      You already have a hand-made Connect Lookup. It will not overwrite it.
+      Nothing was changed.
+
+  "already has its own connpgm/discpgm lines"
+      Your rpt.conf already uses those two settings for something else. It
+      stops without changing anything. Ask the person who gave you this.
+
+  The page opens but stays empty
+      Normal until someone connects. If it stays empty after connecting to a
+      node, tell the person who gave you this what step you were on and paste
+      what the screen printed.
+
+  If anything looks wrong, the safe way out is to remove it (next section).
+
+==========================================================================
+THE OPTIONAL OUTLINE CHECKBOX
+==========================================================================
+  There is nothing to choose when you install. At the top of the page there is
+  a checkbox:
+
+      [ ] Outline the stations behind a link while that link is transmitting
+
+  - UNTICKED (the normal setting): the station you are linked to directly gets
+    a red box while it transmits.
+  - TICKED: that station still gets the red box, and the stations that come
+    through that link also get a faint outline while it transmits. Handy to see
+    who is behind the station that is talking, but on a busy node many rows can
+    be outlined at once.
+
+  Tick it or untick it any time; the page changes right away. Each person's
+  browser remembers its own choice, so it does not change the page for anyone
+  else.
+
+==========================================================================
+TO REMOVE IT COMPLETELY
+==========================================================================
+  On the node:
+    sudo bash install-connect-lookup.sh --uninstall
+  It asks the same way: type  y  and press Enter. It puts rpt.conf back the
+  way it was. Your saved history is kept, and it tells you so. To delete the
+  history too, add  --delete-history  at the end.
+  Check that the two logging lines are gone (no output is correct):
+    sudo grep -n conlog /etc/asterisk/rpt.conf
+
+==========================================================================
+WHAT IT CHANGES ON YOUR NODE (and nothing else)
+==========================================================================
+  - Adds the page in /var/www/html/connect-lookup/
+  - Adds 5 small scripts in /etc/asterisk/custom/
+  - Adds a background service and a daily cleanup job (deletes logs over
+    30 days old)
+  - Adds TWO lines (connpgm and discpgm) to your node's section of
+    /etc/asterisk/rpt.conf. A backup copy is saved first, next to it, named
+    rpt.conf.bak-connect-lookup-<date>.
+  - Installs two small standard packages (curl, php-cli) only if they are
+    missing.
+  It does NOT touch AllScan, Supermon, Allmon or any other page. It refuses to
+  continue if your node already uses connpgm/discpgm for something else, or if
+  it finds a Connect Lookup it did not install.
+
+GOOD TO KNOW
+  - Anyone who can reach your node's web server can open the page, just like
+    your other node pages. It shows who connected, nothing private. If your
+    node is open to the internet and you do not want that, limit access with
+    your firewall or router.
+  - It starts empty. Stations already connected when you install show
+    "before logging began". The 24-hour list builds up over the next day.
+  - "Connected through" works on its own. It asks AllStarLink's public stats
+    feed (stats.allstarlink.org) which node each connected station is behind,
+    so your node needs internet access. Stations on nodes that do not report
+    to the stats feed show a dash; everything else works.
+  - Names come from callook.info (free US FCC records) and EchoLink's public
+    node-lookup page. No login is needed. For names of callsigns outside the
+    US you can OPTIONALLY add your own free QRZ.com login by installing with
+    --qrz; it is stored readable only by the asterisk user.
+  - One node per computer.
+
+VERIFY YOUR COPY (optional)
+  On the node:
+    sha256sum install-connect-lookup.sh
+  should print:
+    0a9ea2082e3749a8079e57be361e73fb500bc4fe2832dd2cf08740cb666f2667
+  You can also read the whole script in any text editor before running it.

@@ -1,0 +1,77 @@
+CONNECT LOOKUP - PASTE-IN UNINSTALL (VPS 684972)
+=================================================
+Open the terminal on the VPS 684972 (ssh in as k4jlb), copy EVERYTHING in
+PART 1 below (from the line  sudo bash <<'EOF'  down to the line  EOF ),
+paste it into the terminal, and press Enter. If it asks for your sudo
+password, type it and press Enter. If it seems stuck at the end, type  EOF
+on its own line and press Enter.
+
+PART 1 removes Connect Lookup: the rpt.conf lines (backup saved first), the
+live service and cleanup timer, the helper scripts (and the saved QRZ login),
+the web page, the saved history and the /tmp backups. It does NOT touch
+AllScan, AllStar Connect or Cockpit.
+
+PART 2 is OPTIONAL. It removes the temporary public login page for your
+friend. Skip it if he still needs to get in over the internet.
+
+To KEEP the saved history, delete the line that starts with
+  rm -rf /var/log/asterisk/node-history
+before you paste PART 1.
+
+
+---------------------------- PART 1 (copy from here) ----------------------------
+sudo bash <<'EOF'
+echo "Removing Connect Lookup..."
+if grep -q 'conlog\.sh' /etc/asterisk/rpt.conf; then
+  cp -a /etc/asterisk/rpt.conf /etc/asterisk/rpt.conf.bak-before-uninstall-$(date +%Y%m%d-%H%M%S)
+  sed -i '/conlog\.sh/d' /etc/asterisk/rpt.conf
+  asterisk -rx "module reload app_rpt.so" >/dev/null 2>&1
+  echo "  rpt.conf lines removed, app_rpt reloaded"
+else
+  echo "  rpt.conf: no conlog lines (already clean)"
+fi
+systemctl disable --now connect-lookup-live.service >/dev/null 2>&1
+systemctl disable --now connect-lookup-clean.timer >/dev/null 2>&1
+systemctl stop connect-lookup-clean.service >/dev/null 2>&1
+rm -f /etc/systemd/system/connect-lookup-live.service /etc/systemd/system/connect-lookup-clean.service /etc/systemd/system/connect-lookup-clean.timer
+systemctl daemon-reload
+systemctl reset-failed >/dev/null 2>&1
+echo "  service and timer removed"
+rm -f /etc/asterisk/custom/conlog.sh /etc/asterisk/custom/live.sh /etc/asterisk/custom/track.sh /etc/asterisk/custom/names.sh /etc/asterisk/custom/topology.php /etc/asterisk/custom/qrz.conf
+rm -f /etc/asterisk/custom/*.bak* 2>/dev/null
+rmdir /etc/asterisk/custom 2>/dev/null || echo "  (left /etc/asterisk/custom: it holds other files)"
+echo "  helper scripts removed"
+rm -rf /var/www/html/connect-lookup
+echo "  web page removed"
+rm -rf /var/log/asterisk/node-history
+echo "  saved history removed"
+rm -f /tmp/live.sh.bak /tmp/live.sh.bak2 /tmp/index.php.bak* /tmp/track.sh.bak* /tmp/addvia.php /tmp/viamap.php /tmp/el.jar
+echo "  /tmp backups removed"
+echo
+echo "Check:"
+grep -c 'conlog\.sh' /etc/asterisk/rpt.conf | sed 's/^/  conlog lines left in rpt.conf: /'
+systemctl list-unit-files | grep -c 'connect-lookup' | sed 's/^/  connect-lookup units left: /'
+[ -e /var/www/html/connect-lookup ] && echo "  web page: STILL THERE" || echo "  web page: gone"
+echo "Connect Lookup removed."
+EOF
+
+---------------------------- PART 1 ends above this line ----------------------------
+
+
+---------------------------- PART 2 (OPTIONAL, copy from here) ----------------------------
+sudo bash <<'EOF'
+echo "Removing the temporary public login page..."
+a2disconf connect-public >/dev/null 2>&1
+rm -f /etc/apache2/conf-available/connect-public.conf /etc/apache2/.htpasswd-connect
+if apache2ctl configtest >/dev/null 2>&1; then
+  systemctl reload apache2 && echo "  Apache file and password file removed, Apache reloaded"
+else
+  echo "  WARNING: Apache config test failed, Apache NOT reloaded. Run: sudo apache2ctl configtest"
+fi
+rm -f /etc/fail2ban/jail.d/apache-connect.local /etc/fail2ban/filter.d/connect-login.conf
+fail2ban-client reload >/dev/null 2>&1 && echo "  fail2ban jail removed" || echo "  fail2ban files removed (reload fail2ban yourself)"
+firewall-cmd --zone=allstarlink --remove-service=https >/dev/null 2>&1 && echo "  public https closed" || echo "  public https was not open"
+echo "Temporary public login page removed."
+EOF
+
+---------------------------- PART 2 ends above this line ----------------------------

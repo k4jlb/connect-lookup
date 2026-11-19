@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.0"
+VERSION="1.1"
 MARK="connect-lookup-installer-v1"
 CUSTOM=/etc/asterisk/custom
 LOGDIR=/var/log/asterisk/node-history
@@ -611,11 +611,18 @@ td[data-start]{min-width:7.5em;white-space:nowrap}
 tr.keyed td{background:#2a1212;box-shadow:inset 0 2px 0 #b83c3c,inset 0 -2px 0 #b83c3c}
 tr.keyed td:first-child{box-shadow:inset 2px 0 0 #b83c3c,inset 0 2px 0 #b83c3c,inset 0 -2px 0 #b83c3c}
 tr.keyed td:last-child{box-shadow:inset -2px 0 0 #b83c3c,inset 0 2px 0 #b83c3c,inset 0 -2px 0 #b83c3c}
+tr.behind td{box-shadow:inset 0 1px 0 #6e3a3a,inset 0 -1px 0 #6e3a3a}
+tr.behind td:first-child{box-shadow:inset 1px 0 0 #6e3a3a,inset 0 1px 0 #6e3a3a,inset 0 -1px 0 #6e3a3a}
+tr.behind td:last-child{box-shadow:inset -1px 0 0 #6e3a3a,inset 0 1px 0 #6e3a3a,inset 0 -1px 0 #6e3a3a}
+.opt{margin:10px 0 0;font-size:13px;color:#aaa}
+.opt label{cursor:pointer}
+.opt input{vertical-align:middle;margin-right:6px}
 </style>
 </head>
 <body>
 <h1>Connect Lookup - Node @NODE@</h1>
 <div class="sub" id="status">Loading...</div>
+<div class="opt"><label><input type="checkbox" id="behindBox">Outline the stations behind a link while that link is transmitting</label></div>
 <h2>Connected now <span id="nowCount"></span></h2>
 <table>
 <thead><tr><th>Node</th><th>Callsign</th><th>Name</th><th>Connected through</th><th>Description / Location</th><th>Connected at</th><th>So far</th></tr></thead>
@@ -627,6 +634,8 @@ tr.keyed td:last-child{box-shadow:inset -2px 0 0 #b83c3c,inset 0 2px 0 #b83c3c,i
 <tbody id="histBody"></tbody>
 </table>
 <script>
+var BEHIND = false;
+try { BEHIND = localStorage.getItem('cl-behind') === '1'; } catch (e) {}
 var data = null;
 function $(id){ return document.getElementById(id); }
 function fmtTime(t){ return new Date(t*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'}); }
@@ -701,6 +710,7 @@ function buildTables(){
     if (s.start) cell(tr, dur(nowT - s.start), 'live').setAttribute('data-start', s.start);
     else cell(tr, '-', 'live');
     tr.setAttribute("data-node", s.node);
+    tr.setAttribute("data-via", s.via || "");
     nb.appendChild(tr);
   });
   var hb = $('histBody'); var done = data.sessions.filter(function(s){ return s.end !== null; }); $("nowCount").textContent = "(" + (data.sessions.length - done.length) + ")"; $("histCount").textContent = "(" + done.length + ")";
@@ -737,7 +747,7 @@ function tick(){
 }
 var kt = {};
 function noteKeyed(a){ var t = Date.now(); for (var j = 0; j < a.length; j++) kt[a[j]] = t; }
-function applyKeyed(){ var t = Date.now(); var rows = document.querySelectorAll('#nowBody tr[data-node]'); for (var i = 0; i < rows.length; i++) { var s = kt[rows[i].getAttribute('data-node')]; rows[i].classList.toggle('keyed', s !== undefined && t - s < 2200); } }
+function applyKeyed(){ var t = Date.now(); var rows = document.querySelectorAll('#nowBody tr[data-node]'); for (var i = 0; i < rows.length; i++) { var s = kt[rows[i].getAttribute('data-node')]; var on = s !== undefined && t - s < 2200; rows[i].classList.toggle('keyed', on); var m = (rows[i].getAttribute('data-via') || '').match(/^via (\S+)/); var d = m ? kt[m[1]] : undefined; rows[i].classList.toggle('behind', BEHIND && !on && d !== undefined && t - d < 2200); } }
 function pollKeyed(){ fetch('?keyed=1', {cache:'no-store'}).then(function(r){ return r.json(); }).then(function(j){ if (data) { data.keyed = j.keyed; } noteKeyed(j.keyed || []); applyKeyed(); }).catch(function(){}); }
 function poll(){
   fetch('?json=1', {cache:'no-store'})
@@ -754,6 +764,7 @@ function poll(){
     })
     .catch(function(){ $('status').textContent = 'Update failed - retrying...'; });
 }
+(function(){ var b = $('behindBox'); b.checked = BEHIND; b.addEventListener('change', function(){ BEHIND = b.checked; try { localStorage.setItem('cl-behind', BEHIND ? '1' : '0'); } catch (e) {} applyKeyed(); }); })();
 poll();
 setInterval(poll, 3000);
 setInterval(tick, 1000);
@@ -988,6 +999,9 @@ do_install() {
     say "    until you add a free QRZ.com login:  sudo bash $0 $NODE --qrz"
   fi
   say "  - Your original rpt.conf was saved next to it (rpt.conf.bak-connect-lookup-*)."
+  say "  - Optional: at the top of the page there is a checkbox, \"Outline the stations"
+  say "    behind a link while that link is transmitting\". It is off until you tick it;"
+  say "    each browser remembers its own choice."
   say "  - To remove everything later:  sudo bash $0 --uninstall"
 }
 
