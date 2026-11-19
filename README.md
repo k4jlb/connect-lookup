@@ -8,6 +8,8 @@ right now, and who connected during the last 24 hours. Built by K4JLB.
 - Description and location, time connected, and how long
 - EchoLink stations in light blue; Web Transceiver callsigns work too
 - A red box around a station's row while it is transmitting (direct links)
+- An optional checkbox at the top of the page that also outlines, faintly, the
+  stations behind that link while it is transmitting (off until you tick it)
 - A count beside each heading; the page refreshes itself every few seconds
 
 It installs by typing one thing: **your own node number**. It does not touch
@@ -30,7 +32,7 @@ curl -fLO https://raw.githubusercontent.com/k4jlb/connect-lookup/main/install-co
 ```
 
 Check the download is intact. It should print exactly this:
-`fda14c2c2c0e738328b493b6706a2c319a96928b83fff38cc86a0a2fa9fc1739`
+`0a9ea2082e3749a8079e57be361e73fb500bc4fe2832dd2cf08740cb666f2667`
 
 ```
 sha256sum install-connect-lookup.sh
@@ -55,6 +57,23 @@ stations connect.
 You can read the whole script in any text editor before running it. It
 contains no passwords and nothing that belongs to anyone else's node; your
 node number is the only thing that is filled in.
+
+## The optional outline checkbox
+
+There is nothing to choose when you install. At the top of the page there is a
+checkbox:
+
+**[ ] Outline the stations behind a link while that link is transmitting**
+
+- **Unticked (the normal setting):** the station you are linked to directly gets
+  a red box while it transmits.
+- **Ticked:** that station still gets the red box, and the stations that come
+  through that link also get a faint outline while it transmits. Handy to see who
+  is behind the station that is talking, but on a busy node many rows can be
+  outlined at once.
+
+Tick it or untick it any time; the page changes right away. Each person's
+browser remembers its own choice, so it does not change the page for anyone else.
 
 ## Update
 

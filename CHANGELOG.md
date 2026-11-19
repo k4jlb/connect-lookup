@@ -4,6 +4,10 @@ Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
 ## 2026-11-19
+- New: a checkbox at the top of the page, "Outline the stations behind a link
+  while that link is transmitting". It is off until you tick it, and your
+  browser remembers your choice. The red box on the link itself is unchanged.
+  Nothing to choose when installing.
 - Fixed: old short EchoLink nodes (for example 3222 or 49196, shown by ASL
   zero-padded as 3003222 and 3049196) never got a callsign. The lookup now strips
   the leading zeros before asking EchoLink.

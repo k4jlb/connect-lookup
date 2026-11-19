@@ -12,6 +12,9 @@ right now, and who connected during the last 24 hours:
     are labelled "Web Transceiver"
   - a red box around a station's row while it is transmitting (for stations
     linked directly to your node; it stays on for about two seconds)
+  - an OPTIONAL checkbox at the top of the page that also outlines, faintly,
+    the stations behind that link while it is transmitting (off until you tick
+    it - see "THE OPTIONAL OUTLINE CHECKBOX" below)
   - a count beside each heading; the page refreshes itself every few seconds
 
 It installs by typing ONE thing: your own node number.
@@ -153,6 +156,25 @@ IF SOMETHING GOES WRONG
   If anything looks wrong, the safe way out is to remove it (next section).
 
 ==========================================================================
+THE OPTIONAL OUTLINE CHECKBOX
+==========================================================================
+  There is nothing to choose when you install. At the top of the page there is
+  a checkbox:
+
+      [ ] Outline the stations behind a link while that link is transmitting
+
+  - UNTICKED (the normal setting): the station you are linked to directly gets
+    a red box while it transmits.
+  - TICKED: that station still gets the red box, and the stations that come
+    through that link also get a faint outline while it transmits. Handy to see
+    who is behind the station that is talking, but on a busy node many rows can
+    be outlined at once.
+
+  Tick it or untick it any time; the page changes right away. Each person's
+  browser remembers its own choice, so it does not change the page for anyone
+  else.
+
+==========================================================================
 TO REMOVE IT COMPLETELY
 ==========================================================================
   On the node:
@@ -200,5 +222,5 @@ VERIFY YOUR COPY (optional)
   On the node:
     sha256sum install-connect-lookup.sh
   should print:
-    fda14c2c2c0e738328b493b6706a2c319a96928b83fff38cc86a0a2fa9fc1739
+    0a9ea2082e3749a8079e57be361e73fb500bc4fe2832dd2cf08740cb666f2667
   You can also read the whole script in any text editor before running it.
