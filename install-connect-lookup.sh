@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5"
+VERSION="1.5.1"
 MARK="connect-lookup-installer-v1"
 CUSTOM=/etc/asterisk/custom
 LOGDIR=/var/log/asterisk/node-history
@@ -432,6 +432,24 @@ foreach (glob("$CACHE/*.json") ?: [] as $f) { if (time() - (int)@filemtime($f) >
 CL_EOF_TOPO
 }
 
+emit_checkver() { cat <<'CL_EOF_CHECKVER'
+#!/bin/bash
+# connect-lookup-installer-v1
+# Once a day: read the newest published version number from GitHub (a one-line file)
+# and save it for the page. Read-only notice: nothing is downloaded or installed.
+OUT="${CL_VEROUT:-/var/log/asterisk/node-history/latest-version.txt}"
+URL="${CL_VERURL:-https://raw.githubusercontent.com/k4jlb/connect-lookup/main/VERSION}"
+v=$(${CL_CURL:-curl} -fsS -m 20 -A ConnectLookup-versioncheck "$URL" 2>/dev/null | head -c 64 | head -n 1 | tr -d '\r[:space:]')
+if [[ $v =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
+  printf '%s\n' "$v" > "$OUT.tmp" && chmod 644 "$OUT.tmp" && mv -f "$OUT.tmp" "$OUT"
+  echo "Newest published version: $v"
+else
+  echo "Could not read a version number from GitHub; keeping the previous answer."
+fi
+exit 0
+CL_EOF_CHECKVER
+}
+
 emit_unit_live() { cat <<'CL_EOF_UNIT1'
 # connect-lookup-installer-v1
 [Unit]
@@ -475,6 +493,33 @@ WantedBy=timers.target
 CL_EOF_UNIT3
 }
 
+emit_unit_ver_service() { cat <<'CL_EOF_UNIT4'
+# connect-lookup-installer-v1
+[Unit]
+Description=Connect Lookup - check for a newer published version
+
+[Service]
+Type=oneshot
+User=asterisk
+ExecStart=/etc/asterisk/custom/checkver.sh
+CL_EOF_UNIT4
+}
+
+emit_unit_ver_timer() { cat <<'CL_EOF_UNIT5'
+# connect-lookup-installer-v1
+[Unit]
+Description=Daily check for a newer Connect Lookup version
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+CL_EOF_UNIT5
+}
+
 emit_index() { cat <<'CL_EOF_INDEX'
 <?php
 // connect-lookup-installer-v1
@@ -506,6 +551,15 @@ function load_events() {
         $last[$x['n']] = $x; $out[] = $x;
     }
     return $out;
+}
+function newer_version() {
+    // newest published version (saved once a day by checkver.sh); only digits and dots are accepted
+    $cur = '@VERSION@';
+    $f = LOGDIR . '/latest-version.txt';
+    if (!is_readable($f)) return null;
+    $v = trim((string)@file_get_contents($f, false, null, 0, 64));
+    if (!preg_match('/^[0-9]+(\.[0-9]+){1,3}$/', $v)) return null;
+    return version_compare($v, $cur, '>') ? $v : null;
 }
 function node_info($nodes) {
     $want = array_flip($nodes);
@@ -637,7 +691,8 @@ if (isset($_GET['keyed'])) { header('Content-Type: application/json'); header('C
 if (isset($_GET['json'])) {
     header('Content-Type: application/json');
     header('Cache-Control: no-store');
-    echo json_encode(add_keyed(add_via(build())), JSON_INVALID_UTF8_SUBSTITUTE);
+    $o = add_keyed(add_via(build())); $o['newer'] = newer_version();
+    echo json_encode($o, JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
 ?>
@@ -658,6 +713,10 @@ th{color:#999;font-weight:600;font-size:13px}
 a{color:#7cc4ff;text-decoration:none}
 a:hover{text-decoration:underline}
 a.nl{color:inherit}
+#ver a{color:#e05555;text-decoration:underline;animation:clpulse 4s ease-in-out infinite}
+#ver a:hover{animation:none;opacity:1}
+@keyframes clpulse{0%,100%{opacity:.35}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){#ver a{animation:none}}
 .live{color:#5fe08a;font-weight:600}
 .empty{color:#777}
 .echo td:not(.live), .echo td:not(.live) a { color: #c4e8ff; }
@@ -675,7 +734,7 @@ tr.behind td:last-child{box-shadow:inset -1px 0 0 #6e3a3a,inset 0 1px 0 #6e3a3a,
 </style>
 </head>
 <body>
-<div class="sub">Version @VERSION@</div>
+<div class="sub" id="ver">Version @VERSION@</div>
 <h1>Connect Lookup - Node @NODE@</h1>
 <div class="sub" id="status">Loading...</div>
 <div class="opt"><label><input type="checkbox" id="behindBox">Outline the stations behind a link while that link is transmitting</label></div>
@@ -694,6 +753,10 @@ tr.behind td:last-child{box-shadow:inset -1px 0 0 #6e3a3a,inset 0 1px 0 #6e3a3a,
 var BEHIND = false;
 try { BEHIND = localStorage.getItem('cl-behind') === '1'; } catch (e) {}
 var data = null;
+var VER = '@VERSION@';
+var REPO = 'https://github.com/k4jlb/connect-lookup';
+var verShown = null;
+function setVer(n){ var e = document.getElementById('ver'); if (!e) return; var ok = typeof n === 'string' && /^[0-9]+(\.[0-9]+){1,3}$/.test(n); var key = ok ? n : ''; if (key === verShown) return; verShown = key; e.textContent = 'Version ' + VER; if (!ok) { e.classList.remove('upd'); return; } e.textContent = 'Version ' + VER + ' - version ' + n + ' is available: '; var a = document.createElement('a'); a.href = REPO; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = 'get it on GitHub'; e.appendChild(a); e.classList.add('upd'); }
 function $(id){ return document.getElementById(id); }
 function fmtTime(t){ return new Date(t*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'}); }
 function fmtDate(t){ return new Date(t*1000).toLocaleDateString([], {month:'short',day:'numeric'}); }
@@ -822,6 +885,7 @@ function poll(){
       j.fetched = Date.now();
       noteKeyed(j.keyed || []);
       data = j;
+      setVer(j.newer);
       var sig = JSON.stringify(j.sessions);
       if (sig !== lastSig) { lastSig = sig; buildTables(); }
       applyKeyed();
@@ -907,9 +971,10 @@ preflight() {
 
   # Never overwrite a hand-made copy or someone else's files.
   local f
-  for f in "$CUSTOM/conlog.sh" "$CUSTOM/live.sh" "$CUSTOM/track.sh" "$CUSTOM/names.sh" "$CUSTOM/topology.php" \
+  for f in "$CUSTOM/conlog.sh" "$CUSTOM/live.sh" "$CUSTOM/track.sh" "$CUSTOM/names.sh" "$CUSTOM/topology.php" "$CUSTOM/checkver.sh" \
            "$UNITDIR/connect-lookup-live.service" "$UNITDIR/connect-lookup-clean.service" \
-           "$UNITDIR/connect-lookup-clean.timer" "$WEB/index.php"; do
+           "$UNITDIR/connect-lookup-clean.timer" "$UNITDIR/connect-lookup-checkver.service" \
+           "$UNITDIR/connect-lookup-checkver.timer" "$WEB/index.php"; do
     if [ -e "$f" ] && ! grep -q "$MARK" "$f" 2>/dev/null; then
       die "$f already exists and was not created by this installer (it looks like a hand-made Connect Lookup). I will not overwrite it."
     fi
@@ -981,7 +1046,8 @@ do_install() {
   put 755 "$CUSTOM/track.sh"  emit_track
   put 755 "$CUSTOM/names.sh"  emit_names
   put 755 "$CUSTOM/topology.php" emit_topology
-  note "$CUSTOM/conlog.sh, live.sh, track.sh, names.sh, topology.php"
+  put 755 "$CUSTOM/checkver.sh" emit_checkver
+  note "$CUSTOM/conlog.sh, live.sh, track.sh, names.sh, topology.php, checkver.sh"
   [ "$QRZ" = 1 ] && setup_qrz
 
   say "[3/6] Web page"
@@ -989,15 +1055,23 @@ do_install() {
   put 644 "$WEB/index.php" emit_index
   note "$WEB/index.php"
 
-  say "[4/6] Background service and daily cleanup"
+  say "[4/6] Background service, daily cleanup and daily version check"
   put 644 "$UNITDIR/connect-lookup-live.service"  emit_unit_live
   put 644 "$UNITDIR/connect-lookup-clean.service" emit_unit_clean_service
   put 644 "$UNITDIR/connect-lookup-clean.timer"   emit_unit_clean_timer
+  put 644 "$UNITDIR/connect-lookup-checkver.service" emit_unit_ver_service
+  put 644 "$UNITDIR/connect-lookup-checkver.timer"   emit_unit_ver_timer
   systemctl daemon-reload || die "systemctl daemon-reload failed"
   systemctl enable connect-lookup-live.service >/dev/null 2>&1 || die "Could not enable the live service"
   systemctl restart connect-lookup-live.service || die "Could not start the live service (see: journalctl -u connect-lookup-live.service)"
   systemctl enable --now connect-lookup-clean.timer >/dev/null 2>&1 || die "Could not enable the cleanup timer"
-  note "connect-lookup-live.service running, connect-lookup-clean.timer scheduled"
+  systemctl enable --now connect-lookup-checkver.timer >/dev/null 2>&1 || die "Could not enable the version-check timer"
+  note "connect-lookup-live.service running, connect-lookup-clean.timer and connect-lookup-checkver.timer scheduled"
+  if runuser -u asterisk -- "$CUSTOM/checkver.sh" 2>&1 | grep -q '^Newest published version' && [ -s "$LOGDIR/latest-version.txt" ]; then
+    note "newest published version: $(head -n1 "$LOGDIR/latest-version.txt")"
+  else
+    warn "could not read the newest version from GitHub just now (the daily check will try again); the page works without it"
+  fi
 
   say "[5/6] Connection logging in rpt.conf (last, so nothing points at a missing script)"
   if [ "$RPT_DONE" = 1 ]; then
@@ -1068,6 +1142,10 @@ do_install() {
   say "  - Optional: at the top of the page there is a checkbox, \"Outline the stations"
   say "    behind a link while that link is transmitting\". It is off until you tick it;"
   say "    each browser remembers its own choice."
+  say "  - Once a day the node reads one line from GitHub (the newest version number). If a"
+  say "    newer version than this one exists, the 'Version' line at the top of the page"
+  say "    says so, with a red 'get it on GitHub' link that fades slowly in and out. It only"
+  say "    tells you; nothing installs by itself."
   say "  - To remove everything later:  sudo bash $0 --uninstall"
 }
 
@@ -1092,17 +1170,18 @@ do_uninstall() {
   fi
 
   # 2. services
-  systemctl disable --now connect-lookup-live.service connect-lookup-clean.timer >/dev/null 2>&1
-  rm -f "$UNITDIR/connect-lookup-live.service" "$UNITDIR/connect-lookup-clean.service" "$UNITDIR/connect-lookup-clean.timer"
+  systemctl disable --now connect-lookup-live.service connect-lookup-clean.timer connect-lookup-checkver.timer >/dev/null 2>&1
+  rm -f "$UNITDIR/connect-lookup-live.service" "$UNITDIR/connect-lookup-clean.service" "$UNITDIR/connect-lookup-clean.timer" \
+        "$UNITDIR/connect-lookup-checkver.service" "$UNITDIR/connect-lookup-checkver.timer"
   systemctl daemon-reload
   note "services removed"
 
   # 3. scripts and page
-  rm -f "$CUSTOM/conlog.sh" "$CUSTOM/live.sh" "$CUSTOM/track.sh" "$CUSTOM/names.sh" "$CUSTOM/topology.php" "$CUSTOM/qrz.conf"
+  rm -f "$CUSTOM/conlog.sh" "$CUSTOM/live.sh" "$CUSTOM/track.sh" "$CUSTOM/names.sh" "$CUSTOM/topology.php" "$CUSTOM/checkver.sh" "$CUSTOM/qrz.conf"
   rmdir "$CUSTOM" 2>/dev/null
   if grep -q "$MARK" "$WEB/index.php" 2>/dev/null; then rm -rf "$WEB"; note "web page removed"; fi
 
-  rm -rf "$LOGDIR/stats-cache" "$LOGDIR/topology.json" "$LOGDIR/topology.lock" "$LOGDIR/keyed.txt" "$LOGDIR/keyed.tmp" 2>/dev/null
+  rm -rf "$LOGDIR/stats-cache" "$LOGDIR/topology.json" "$LOGDIR/topology.lock" "$LOGDIR/keyed.txt" "$LOGDIR/keyed.tmp" "$LOGDIR/latest-version.txt" "$LOGDIR/latest-version.txt.tmp" 2>/dev/null
 
   # 4. history is only deleted when asked
   if [ -d "$LOGDIR" ]; then
@@ -1157,8 +1236,8 @@ fi
 say ""
 say "This will:"
 say "  1. Put the web page in $WEB"
-say "  2. Add five small helper scripts in $CUSTOM"
-say "  3. Add a background service and a daily cleanup job (systemd)"
+say "  2. Add six small helper scripts in $CUSTOM"
+say "  3. Add a background service, a daily cleanup job and a daily version check (systemd)"
 say "  4. Add two lines (connpgm and discpgm) to the [$NODE] section of"
 say "     $RPT, after saving a backup copy, and reload app_rpt"
 say "Nothing else is changed. AllScan and your other pages are left alone."

@@ -15,6 +15,10 @@ right now, and who connected during the last 24 hours. Built by K4JLB.
 - An optional checkbox at the top of the page that also outlines, faintly, the
   stations behind that link while it is transmitting (off until you tick it)
 - A count beside each heading; the page refreshes itself every few seconds
+- A notice when a newer version is published here: once a day the node reads one
+  line from this repository (`VERSION`), and if it is newer than the one you run,
+  the "Version" line at the top of the page says so, with a red "get it on GitHub"
+  link (to this page) that fades slowly in and out. It only tells you; nothing installs by itself
 
 It installs by typing one thing: **your own node number**. It does not touch
 AllScan, Supermon, Allmon or any other page, and you can remove it completely
@@ -36,7 +40,7 @@ curl -fLO https://raw.githubusercontent.com/k4jlb/connect-lookup/main/install-co
 ```
 
 Check the download is intact. It should print exactly this:
-`862171a8ff606d37b369f20c2956bb085aa0d4e7d6ccfc090fc13d872594b9e1`
+`17dbbfeafaf818a131700f752cf492f60a03ac857dd91a8a75bf94803017dd7e`
 
 ```
 sha256sum install-connect-lookup.sh
@@ -98,8 +102,10 @@ It puts `rpt.conf` back the way it was and keeps your saved history. Add
 ## What it changes on your node (and nothing else)
 
 - Adds the page in `/var/www/html/connect-lookup/`
-- Adds five small scripts in `/etc/asterisk/custom/`
-- Adds a background service and a daily cleanup job (deletes logs over 30 days old)
+- Adds six small scripts in `/etc/asterisk/custom/`
+- Adds a background service, a daily cleanup job (deletes logs over 30 days old) and
+  a daily version check (reads the one-line `VERSION` file from this repository;
+  nothing about your node is sent, and nothing is installed by it)
 - Adds two lines (`connpgm` and `discpgm`) to your node's section of
   `/etc/asterisk/rpt.conf`, after saving a backup copy next to it
 - Installs two small standard packages (`curl`, `php-cli`) only if missing

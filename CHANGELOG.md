@@ -3,6 +3,20 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-20 (version 1.5.1)
+- New: update notice. Once a day (a systemd timer, with a random delay of up to
+  6 hours) the node reads the one-line file `VERSION` from this repository. If the
+  number there is newer than the version you run, the "Version" line at the top
+  of the page says which version is available, with a red "get it on GitHub" link
+  that fades slowly in and out and goes to the project page (the link address is
+  fixed in the page; the version file cannot change it). It is a notice only:
+  nothing is downloaded or installed by it, only digits and dots are accepted from
+  the file, and if GitHub cannot be reached the page simply shows the plain
+  version line. Nodes running 1.5 or older do not have this check until they run
+  this installer once.
+- Installer: adds `checkver.sh` and the `connect-lookup-checkver` service and
+  timer; the uninstall removes them again.
+
 ## 2026-11-20 (version 1.5)
 Found by checking the numbers on the page against a real day of use.
 - New: the version number is shown in faint letters above the page title.

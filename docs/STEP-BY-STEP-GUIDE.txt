@@ -189,9 +189,13 @@ TO REMOVE IT COMPLETELY
 WHAT IT CHANGES ON YOUR NODE (and nothing else)
 ==========================================================================
   - Adds the page in /var/www/html/connect-lookup/
-  - Adds 5 small scripts in /etc/asterisk/custom/
-  - Adds a background service and a daily cleanup job (deletes logs over
-    30 days old)
+  - Adds 6 small scripts in /etc/asterisk/custom/
+  - Adds a background service, a daily cleanup job (deletes logs over
+    30 days old) and a daily version check. The version check reads one
+    line (the newest version number) from github.com/k4jlb/connect-lookup.
+    If it is newer than yours, the "Version" line at the top of the page
+    says so, with a red "get it on GitHub" link (to the project page)
+    that fades slowly in and out. It only tells you; it never installs anything. To update, run the download and install steps again.
   - Adds TWO lines (connpgm and discpgm) to your node's section of
     /etc/asterisk/rpt.conf. A backup copy is saved first, next to it, named
     rpt.conf.bak-connect-lookup-<date>.
@@ -222,5 +226,5 @@ VERIFY YOUR COPY (optional)
   On the node:
     sha256sum install-connect-lookup.sh
   should print:
-    862171a8ff606d37b369f20c2956bb085aa0d4e7d6ccfc090fc13d872594b9e1
+    17dbbfeafaf818a131700f752cf492f60a03ac857dd91a8a75bf94803017dd7e
   You can also read the whole script in any text editor before running it.
