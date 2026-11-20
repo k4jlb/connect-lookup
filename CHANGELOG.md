@@ -3,6 +3,20 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-19 (version 1.3)
+- Fixed: a station could sit in "Connected now" and then in "Last 24 hours"
+  with a disconnect time that kept changing. The disconnect was never logged if
+  the very last station left (the list was empty), or if the station left while
+  Connect Lookup was not running (a reboot, for example). Both are now closed
+  out properly. A station that leaves is logged within a few seconds.
+- Fixed: your own node could appear in "Connected now" with a dash under
+  "Connected through". When another node's link list includes yours, Asterisk
+  reports your own node back as connected. Your own node number is now left out
+  of the list, and the page ignores it too.
+- Hardened: a node listed twice in Asterisk's answer now appears once, and a
+  failed or empty answer from Asterisk (during a restart, for example) no longer
+  records anyone as having left.
+
 ## 2026-11-19 (version 1.2)
 - Fixed: a station connected straight to your node could show a dash under
   "Connected through" instead of "Direct". If one direct link (an EchoLink

@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.2"
+VERSION="1.3"
 MARK="connect-lookup-installer-v1"
 CUSTOM=/etc/asterisk/custom
 LOGDIR=/var/log/asterisk/node-history
@@ -114,8 +114,14 @@ LASTN=0
     sleep 0.5
   done ) &
 while true; do
-  /usr/sbin/asterisk -rx "rpt nodes @NODE@" 2>/dev/null | grep -v '\*' | tr ',' '\n' | tr -d ' \t' | grep -E '^[TRC][0-9A-Za-z-]+$' | cut -c2- > $D/live.tmp
-  if [ ${PIPESTATUS[0]} -eq 0 ]; then mv -f $D/live.tmp $D/live.txt; fi
+  # OKLIVE=1 only when Asterisk really answered (the answer has its CONNECTED NODES heading, even if it says <NONE>)
+  OKLIVE=0
+  raw=$(/usr/sbin/asterisk -rx "rpt nodes @NODE@" 2>/dev/null); rc=$?
+  if [ $rc -eq 0 ] && grep -q 'CONNECTED NODES' <<< "$raw"; then
+    OKLIVE=1
+    grep -v '\*' <<< "$raw" | tr ',' '\n' | tr -d ' \t' | grep -E '^[TRC][0-9A-Za-z-]+$' | cut -c2- | grep -vx @NODE@ | awk '!seen[$0]++' > $D/live.tmp
+    mv -f $D/live.tmp $D/live.txt
+  fi
   now=$(date +%s)
   OLD=()
   while read -r n s; do OLD[$n]=$s; done < <(cat $D/direct.txt 2>/dev/null)
@@ -164,16 +170,22 @@ emit_track() { cat <<'CL_EOF_TRACK'
 # connect-lookup-installer-v1
 track() {
   local n ts LOG DIR
+  # skip this round if Asterisk did not give a real answer (it may be restarting); an empty list with a real answer is fine
+  [ "${OKLIVE:-1}" = 1 ] || return
   CUR=()
   while read -r n; do [ -n "$n" ] && CUR[$n]=1; done < $D/live.txt
-  [ ${#CUR[@]} -eq 0 ] && return
   DIR=" $(cut -d" " -f1 $D/direct.txt | tr "\n" " ") "
+  LOG=$D/$(date +%F).log
+  ts="$now $(date +%F_%T)"
   if [ -z "$PINIT" ]; then
     PINIT=1
     for n in "${!CUR[@]}"; do PREV[$n]=1; done
+    # stations the log still shows as connected from before a restart, but that are gone now: close them
+    for n in $(cat $D/$(date -d yesterday +%F).log $D/$(date +%F).log 2>/dev/null | awk '{print $5}' | sort -u); do
+      [ -n "${CUR[$n]}" ] && continue
+      lastd "$n" || echo "$ts D @NODE@ $n" >> $LOG
+    done
   fi
-  LOG=$D/$(date +%F).log
-  ts="$now $(date +%F_%T)"
   for n in "${!CUR[@]}"; do
     unset "MISS[$n]"
     case "$DIR" in *" $n "*) WASDIR[$n]=1 ;; *) unset "WASDIR[$n]" ;; esac
@@ -450,6 +462,7 @@ function load_events() {
             $p = preg_split('/\s+/', trim($line));
             if (count($p) < 5 || !ctype_digit($p[0])) continue;
             if ($p[2] !== 'C' && $p[2] !== 'D') continue;
+            if ($p[4] === '@NODE@') continue;   // never list this node itself
             $ev[] = ['t' => (int)$p[0], 'e' => $p[2], 'n' => $p[4]];
         }
         fclose($fh);
@@ -553,7 +566,7 @@ function build() {
     if (is_file($lf) && $now - filemtime($lf) < 20) {
         $lt = filemtime($lf);
         $live = [];
-        foreach (file($lf, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) $live[trim($l)] = true;
+        foreach (file($lf, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) { $t = trim($l); if ($t !== '@NODE@') $live[$t] = true; }
         foreach ($open as $n => $s) {
             if (!isset($live[$n]) && ($s['start'] ?? 0) < $lt - 5) {
                 $s['end'] = $lt; $sess[] = $s; unset($open[$n]);
