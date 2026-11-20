@@ -3,6 +3,29 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-20 (version 1.5)
+Found by checking the numbers on the page against a real day of use.
+- New: the version number is shown in faint letters above the page title.
+- New: node numbers (AllStarLink nodes) open that node's bubble chart on the
+  AllStarLink stats site. EchoLink nodes (3 plus 6 digits) and callsigns are
+  unchanged. A "Network map for node ..." link sits under the checkbox line.
+- Fixed: after a reboot or an Asterisk restart, stations that came back behind
+  a direct link could keep the start time from before the restart. "Connected
+  now" then showed them connected longer than the link they come through. A
+  visit that is still open in the log from before Asterisk started is now ended
+  at the moment Asterisk started, and a new visit begins when Connect Lookup
+  first sees the station again. The start time of Asterisk is taken from
+  Asterisk itself ("core show uptime seconds"), not from the process list,
+  which can be several seconds off on a long-running machine.
+- Fixed: a connect could be logged twice within a second or two (once by
+  Asterisk's own connect program and once by the tracker), which showed up as an
+  extra row of 0 s or 1 s in "Last 24 hours". The tracker no longer logs the
+  second one, and the page keeps only the first of two connects logged within
+  3 seconds for the same station, which also hides such rows already in the log.
+- Known limit: Connect Lookup cannot see the exact second a station came back,
+  so a new visit after a restart starts when it first notices the station, a
+  few seconds later at most.
+
 ## 2026-11-19 (version 1.4.1)
 - Fixed: version 1.4 joined two separate visits into one long visit when the
   log showed a connect with no disconnect before the next connect, which is what

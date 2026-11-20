@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.4.1"
+VERSION="1.5"
 MARK="connect-lookup-installer-v1"
 CUSTOM=/etc/asterisk/custom
 LOGDIR=/var/log/asterisk/node-history
@@ -171,8 +171,15 @@ CL_EOF_LIVE
 
 emit_track() { cat <<'CL_EOF_TRACK'
 # connect-lookup-installer-v1
+declare -A LT
+# start time (epoch) of the running Asterisk, taken from Asterisk itself (the process start time shown by ps can be several seconds off), or nothing if it is not running; every link dies with the process
+ast_start() {
+  local u
+  u=$(${CL_ASTERISK:-/usr/sbin/asterisk} -rx "core show uptime seconds" 2>/dev/null | awk '/^System uptime:/ {print $3; exit}')
+  [[ $u =~ ^[0-9]+$ ]] && echo $((now - u))
+}
 track() {
-  local n ts LOG DIR
+  local n ts LOG DIR t
   # skip this round if Asterisk did not give a real answer (it may be restarting); an empty list with a real answer is fine
   [ "${OKLIVE:-1}" = 1 ] || return
   CUR=()
@@ -181,8 +188,8 @@ track() {
   LOG=$D/$(date +%F).log
   ts="$now $(date +%F_%T)"
   # last logged event (C or D) of every node, read once per round from the newest three daily logs (the page reads the same three)
-  LE=()
-  while read -r n e; do LE[$n]=$e; done < <(cat $(ls $D/20??-??-??.log 2>/dev/null | tail -n 3) /dev/null 2>/dev/null | awk '$4=="@NODE@" && ($3=="C" || $3=="D") {l[$5]=$3} END {for (k in l) print k, l[k]}')
+  LE=(); LT=()
+  while read -r n e t; do LE[$n]=$e; LT[$n]=$t; done < <(cat $(ls $D/20??-??-??.log 2>/dev/null | tail -n 3) /dev/null 2>/dev/null | awk '$4=="@NODE@" && ($3=="C" || $3=="D") {l[$5]=$3; t[$5]=$1} END {for (k in l) print k, l[k], t[k]}')
   if [ -z "$PINIT" ]; then
     PINIT=1
     for n in "${!CUR[@]}"; do PREV[$n]=1; done
@@ -190,6 +197,18 @@ track() {
     for n in $(cat $(ls $D/20??-??-??.log 2>/dev/null | tail -n 3) /dev/null 2>/dev/null | awk '{print $5}' | sort -u); do
       [ -n "${CUR[$n]}" ] && continue
       lastd "$n" || echo "$ts D @NODE@ $n" >> $LOG
+    done
+  fi
+  # a visit still open in the log from before Asterisk (re)started cannot be real: all links died with the old process (reboot, Asterisk restart).
+  # End it when Asterisk started and open a new one now, so a station that came back without a logged D/C does not keep its old start time.
+  AST=$(ast_start)
+  if [[ $AST =~ ^[0-9]+$ ]]; then
+    for n in "${!CUR[@]}"; do
+      t=${LT[$n]}
+      [ "${LE[$n]}" = C ] && [[ $t =~ ^[0-9]+$ ]] && [ $((t + 10)) -lt "$AST" ] || continue
+      echo "$AST $(date -d @$AST +%F_%T) D @NODE@ $n" >> $LOG
+      echo "$ts C @NODE@ $n" >> $LOG
+      LE[$n]=C; LT[$n]=$now
     done
   fi
   for n in "${!CUR[@]}"; do
@@ -200,7 +219,7 @@ track() {
       else unset "BACK[$n]"; fi ;; esac
     if [ -z "${PREV[$n]}" ]; then
       PREV[$n]=1; NEWC=1
-      case "$DIR" in *" $n "*) ;; *) echo "$ts C @NODE@ $n" >> $LOG; LE[$n]=C; SCANUNTIL=$((now + 300)) ;; esac
+      case "$DIR" in *" $n "*) ;; *) lastc "$n" || echo "$ts C @NODE@ $n" >> $LOG; LE[$n]=C; SCANUNTIL=$((now + 300)) ;; esac
     fi
   done
   for n in "${!PREV[@]}"; do
@@ -214,6 +233,8 @@ track() {
 }
 # true if the last logged event for node $1 (yesterday or today) is already a D
 lastd() { [ "$(grep -h " [CD] @NODE@ $1\$" $(ls $D/20??-??-??.log 2>/dev/null | tail -n 3) /dev/null 2>/dev/null | tail -n1 | cut -d" " -f3)" = "D" ]; }
+# true if the last logged event for node $1 is a C written in the last 5 seconds (the connect program of Asterisk already logged this connect)
+lastc() { local l e; l=$(grep -h " [CD] @NODE@ $1\$" $(ls $D/20??-??-??.log 2>/dev/null | tail -n 3) /dev/null 2>/dev/null | tail -n1); e=$(cut -d" " -f1 <<< "$l"); [[ $e =~ ^[0-9]+$ ]] && [ "$(cut -d" " -f3 <<< "$l")" = C ] && [ $((now - e)) -le 5 ]; }
 CL_EOF_TRACK
 }
 
@@ -477,7 +498,14 @@ function load_events() {
         fclose($fh);
     }
     usort($ev, fn($a, $b) => $a['t'] <=> $b['t']);
-    return $ev;
+    // the same connect can be logged twice within a second or two (Asterisk's own connect program and the tracker): keep the first
+    $last = []; $out = [];
+    foreach ($ev as $x) {
+        $l = $last[$x['n']] ?? null;
+        if ($x['e'] === 'C' && $l && $l['e'] === 'C' && $x['t'] - $l['t'] <= 3) continue;
+        $last[$x['n']] = $x; $out[] = $x;
+    }
+    return $out;
 }
 function node_info($nodes) {
     $want = array_flip($nodes);
@@ -629,6 +657,7 @@ th,td{padding:6px 10px;border-bottom:1px solid #2a2a2a;text-align:left}
 th{color:#999;font-weight:600;font-size:13px}
 a{color:#7cc4ff;text-decoration:none}
 a:hover{text-decoration:underline}
+a.nl{color:inherit}
 .live{color:#5fe08a;font-weight:600}
 .empty{color:#777}
 .echo td:not(.live), .echo td:not(.live) a { color: #c4e8ff; }
@@ -646,9 +675,11 @@ tr.behind td:last-child{box-shadow:inset -1px 0 0 #6e3a3a,inset 0 1px 0 #6e3a3a,
 </style>
 </head>
 <body>
+<div class="sub">Version @VERSION@</div>
 <h1>Connect Lookup - Node @NODE@</h1>
 <div class="sub" id="status">Loading...</div>
 <div class="opt"><label><input type="checkbox" id="behindBox">Outline the stations behind a link while that link is transmitting</label></div>
+<div class="opt"><a href="https://stats.allstarlink.org/stats/@NODE@/networkMap" target="_blank" rel="noopener noreferrer">Network map for node @NODE@</a> (AllStarLink stats site)</div>
 <h2>Connected now <span id="nowCount"></span></h2>
 <table>
 <thead><tr><th>Node</th><th>Callsign</th><th>Name</th><th>Connected through</th><th>Description / Location</th><th>Connected at</th><th>So far</th></tr></thead>
@@ -692,6 +723,15 @@ function nodeCell(tr, s){
     a.textContent = n;
     td.textContent = '';
     td.appendChild(a);
+  } else if (/^[0-9]+$/.test(n) && !/^3[0-9]{6}$/.test(n)) {
+    var b = document.createElement('a');
+    b.href = 'https://stats.allstarlink.org/stats/' + encodeURIComponent(n) + '/networkMap';
+    b.target = '_blank';
+    b.rel = 'noopener noreferrer';
+    b.className = 'nl';
+    b.textContent = n;
+    td.textContent = '';
+    td.appendChild(b);
   }
   return td;
 }
@@ -809,7 +849,7 @@ put() {
     install -d -m 755 "$BK"
     cp -p "$target" "$BK/$(basename "$target").$STAMP"
   fi
-  "$fn" | sed "s/@NODE@/$NODE/g" > "$target.tmp" || die "Could not write $target"
+  "$fn" | sed "s/@NODE@/$NODE/g; s/@VERSION@/$VERSION/g" > "$target.tmp" || die "Could not write $target"
   chmod "$mode" "$target.tmp"
   mv -f "$target.tmp" "$target" || die "Could not move $target into place"
 }

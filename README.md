@@ -8,6 +8,10 @@ right now, and who connected during the last 24 hours. Built by K4JLB.
 - Description and location, time connected, and how long
 - EchoLink stations in light blue; Web Transceiver callsigns work too
 - A red box around a station's row while it is transmitting (direct links)
+- Node numbers open that node's bubble chart on the AllStarLink stats site (the
+  link keeps the normal text color; it underlines when you point at it)
+- A "Network map for node ..." link at the top, and the version number in faint
+  letters above the title
 - An optional checkbox at the top of the page that also outlines, faintly, the
   stations behind that link while it is transmitting (off until you tick it)
 - A count beside each heading; the page refreshes itself every few seconds
@@ -32,7 +36,7 @@ curl -fLO https://raw.githubusercontent.com/k4jlb/connect-lookup/main/install-co
 ```
 
 Check the download is intact. It should print exactly this:
-`c510eec8fb8de92ba86cab5cf16e14645db251b5353a578ef9c659e9c10070d0`
+`862171a8ff606d37b369f20c2956bb085aa0d4e7d6ccfc090fc13d872594b9e1`
 
 ```
 sha256sum install-connect-lookup.sh
