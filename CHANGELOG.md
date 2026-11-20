@@ -3,6 +3,26 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-19 (version 1.4)
+Found by an independent review of version 1.3. Each item was reproduced with a
+failing test first and passes now.
+- Fixed: a link that is still connecting (an outgoing link that has not come
+  up yet, or never does) was logged as if a station had connected. It now shows
+  up only once the link is really connected.
+- Fixed: a station that came back while Connect Lookup was stopped, or that
+  stayed on through another link after its direct link dropped, was missing
+  from "Last 24 hours" (shown as "before logging began"). Its return is now
+  logged.
+- Fixed: the disconnect time of a station could keep changing if the node had
+  been switched off for more than two days. The tracker now looks at the same
+  three daily logs as the page.
+- Fixed: a slow or hanging EchoLink name lookup could stall the whole update
+  loop and empty "Connected now". The lookup now runs in the background.
+- Fixed: if "rpt lstats" failed once, the list of direct links was emptied for
+  one round, which could split one visit in two. That round is now skipped.
+- Fixed: the page no longer makes up a session or a "before logging began" row
+  from doubled connect/disconnect lines.
+
 ## 2026-11-19 (version 1.3)
 - Fixed: a station could sit in "Connected now" and then in "Last 24 hours"
   with a disconnect time that kept changing. The disconnect was never logged if

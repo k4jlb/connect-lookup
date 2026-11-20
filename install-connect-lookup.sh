@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.3"
+VERSION="1.4"
 MARK="connect-lookup-installer-v1"
 CUSTOM=/etc/asterisk/custom
 LOGDIR=/var/log/asterisk/node-history
@@ -101,7 +101,7 @@ declare -A OLD
 LAST=0
 LASTSCAN=0
 IVL=120
-declare -A PREV MISS WASDIR CUR
+declare -A PREV MISS WASDIR CUR BACK LE
 . /etc/asterisk/custom/track.sh
 LASTN=0
 # keyed.txt: which directly linked stations are transmitting right now (checked twice a second; used by the page's red outline)
@@ -119,13 +119,15 @@ while true; do
   raw=$(/usr/sbin/asterisk -rx "rpt nodes @NODE@" 2>/dev/null); rc=$?
   if [ $rc -eq 0 ] && grep -q 'CONNECTED NODES' <<< "$raw"; then
     OKLIVE=1
-    grep -v '\*' <<< "$raw" | tr ',' '\n' | tr -d ' \t' | grep -E '^[TRC][0-9A-Za-z-]+$' | cut -c2- | grep -vx @NODE@ | awk '!seen[$0]++' > $D/live.tmp
+    grep -v '\*' <<< "$raw" | tr ',' '\n' | tr -d ' \t' | grep -E '^[TR][0-9A-Za-z-]+$' | cut -c2- | grep -vx @NODE@ | awk '!seen[$0]++' > $D/live.tmp
     mv -f $D/live.tmp $D/live.txt
   fi
   now=$(date +%s)
   OLD=()
   while read -r n s; do OLD[$n]=$s; done < <(cat $D/direct.txt 2>/dev/null)
-  /usr/sbin/asterisk -rx "rpt lstats @NODE@" 2>/dev/null | grep -E " (IN|OUT) " | while read -r -a f; do
+  LST=$(/usr/sbin/asterisk -rx "rpt lstats @NODE@" 2>/dev/null) || LST=FAIL
+  : > $D/direct.tmp
+  [ "$LST" != FAIL ] && grep -E " (IN|OUT) " <<< "$LST" | while read -r -a f; do
     n=${f[0]}; ct=${f[${#f[@]}-2]}
     [[ $ct =~ ^[0-9]+:[0-9]+:[0-9]+:[0-9]+$ ]] || continue
     IFS=: read -r h m s ms <<< "$ct"
@@ -134,9 +136,10 @@ while true; do
     echo "$n $t"
   done > $D/direct.tmp
   while read -r n t; do grep -qx "$n $t" $D/direct-starts.txt 2>/dev/null || echo "$n $t" >> $D/direct-starts.txt; done < $D/direct.tmp
-  mv -f $D/direct.tmp $D/direct.txt
+  if [ "$LST" != FAIL ]; then mv -f $D/direct.tmp $D/direct.txt; else touch $D/direct.txt; OKLIVE=0; fi
   if [ $((now - LAST)) -ge 60 ]; then
     LAST=$now
+    ( /usr/bin/flock -n 9 || exit 0
     for n in $(grep -E "^3[0-9]{6}$" $D/live.txt | cut -c2-); do
       q=$((10#$n))
       grep -q "^$n|" $D/elnames.txt 2>/dev/null && continue
@@ -154,7 +157,7 @@ while true; do
         sed -i "/^$n /d" $D/elmiss.txt 2>/dev/null
         echo "$n $now" >> $D/elmiss.txt
       fi
-    done
+    done ) 9>$D/el.lock </dev/null >/dev/null 2>&1 &
   fi
   if [ $((now - LASTN)) -ge 60 ]; then LASTN=$now; /usr/bin/flock -n $D/names.lock /etc/asterisk/custom/names.sh >/dev/null 2>&1 & fi
   track
@@ -177,21 +180,27 @@ track() {
   DIR=" $(cut -d" " -f1 $D/direct.txt | tr "\n" " ") "
   LOG=$D/$(date +%F).log
   ts="$now $(date +%F_%T)"
+  # last logged event (C or D) of every node, read once per round from the newest three daily logs (the page reads the same three)
+  LE=()
+  while read -r n e; do LE[$n]=$e; done < <(cat $(ls $D/20??-??-??.log 2>/dev/null | tail -n 3) /dev/null 2>/dev/null | awk '$4=="@NODE@" && ($3=="C" || $3=="D") {l[$5]=$3} END {for (k in l) print k, l[k]}')
   if [ -z "$PINIT" ]; then
     PINIT=1
     for n in "${!CUR[@]}"; do PREV[$n]=1; done
     # stations the log still shows as connected from before a restart, but that are gone now: close them
-    for n in $(cat $D/$(date -d yesterday +%F).log $D/$(date +%F).log 2>/dev/null | awk '{print $5}' | sort -u); do
+    for n in $(cat $(ls $D/20??-??-??.log 2>/dev/null | tail -n 3) /dev/null 2>/dev/null | awk '{print $5}' | sort -u); do
       [ -n "${CUR[$n]}" ] && continue
       lastd "$n" || echo "$ts D @NODE@ $n" >> $LOG
     done
   fi
   for n in "${!CUR[@]}"; do
     unset "MISS[$n]"
-    case "$DIR" in *" $n "*) WASDIR[$n]=1 ;; *) unset "WASDIR[$n]" ;; esac
+    case "$DIR" in *" $n "*) WASDIR[$n]=1; unset "BACK[$n]" ;; *) unset "WASDIR[$n]"
+      if [ -n "${PREV[$n]}" ] && [ "${LE[$n]}" = D ]; then BACK[$n]=$(( ${BACK[$n]:-0} + 1 ))
+        [ ${BACK[$n]} -ge 2 ] && { echo "$ts C @NODE@ $n" >> $LOG; LE[$n]=C; unset "BACK[$n]"; }
+      else unset "BACK[$n]"; fi ;; esac
     if [ -z "${PREV[$n]}" ]; then
       PREV[$n]=1; NEWC=1
-      case "$DIR" in *" $n "*) ;; *) echo "$ts C @NODE@ $n" >> $LOG; SCANUNTIL=$((now + 300)) ;; esac
+      case "$DIR" in *" $n "*) ;; *) echo "$ts C @NODE@ $n" >> $LOG; LE[$n]=C; SCANUNTIL=$((now + 300)) ;; esac
     fi
   done
   for n in "${!PREV[@]}"; do
@@ -199,12 +208,12 @@ track() {
     MISS[$n]=$(( ${MISS[$n]:-0} + 1 ))
     if [ ${MISS[$n]} -ge 2 ]; then
       lastd "$n" || echo "$ts D @NODE@ $n" >> $LOG
-      unset "PREV[$n]" "MISS[$n]" "WASDIR[$n]"
+      unset "PREV[$n]" "MISS[$n]" "WASDIR[$n]" "BACK[$n]"
     fi
   done
 }
 # true if the last logged event for node $1 (yesterday or today) is already a D
-lastd() { [ "$(grep -h " [CD] @NODE@ $1\$" $D/$(date -d yesterday +%F).log $D/$(date +%F).log 2>/dev/null | tail -n1 | cut -d" " -f3)" = "D" ]; }
+lastd() { [ "$(grep -h " [CD] @NODE@ $1\$" $(ls $D/20??-??-??.log 2>/dev/null | tail -n 3) /dev/null 2>/dev/null | tail -n1 | cut -d" " -f3)" = "D" ]; }
 CL_EOF_TRACK
 }
 
@@ -554,12 +563,12 @@ function build() {
     foreach (load_events() as $x) {
         $n = $x['n'];
         $last[$n] = $x['t'];
+        $pe = $lastE[$n] ?? ''; $lastE[$n] = $x['e'];
         if ($x['e'] === 'C') {
-            if (isset($open[$n])) { $s = $open[$n]; $s['end'] = $x['t']; $sess[] = $s; }
-            $open[$n] = ['node' => $n, 'start' => $x['t'], 'end' => null];
+            if (!isset($open[$n])) $open[$n] = ['node' => $n, 'start' => $x['t'], 'end' => null];
         } else {
             if (isset($open[$n])) { $s = $open[$n]; $s['end'] = $x['t']; $sess[] = $s; unset($open[$n]); }
-            else { $sess[] = ['node' => $n, 'start' => null, 'end' => $x['t']]; }
+            elseif ($pe !== 'D') { $sess[] = ['node' => $n, 'start' => null, 'end' => $x['t']]; }
         }
     }
     $lf = LOGDIR . '/live.txt';
