@@ -3,6 +3,13 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-19 (version 1.4.1)
+- Fixed: version 1.4 joined two separate visits into one long visit when the
+  log showed a connect with no disconnect before the next connect, which is what
+  a restart or reboot leaves behind. Each connect now starts a new visit again,
+  and the earlier one ends at that time. A doubled disconnect line still adds
+  no extra row.
+
 ## 2026-11-19 (version 1.4)
 Found by an independent review of version 1.3. Each item was reproduced with a
 failing test first and passes now.
@@ -20,8 +27,8 @@ failing test first and passes now.
   loop and empty "Connected now". The lookup now runs in the background.
 - Fixed: if "rpt lstats" failed once, the list of direct links was emptied for
   one round, which could split one visit in two. That round is now skipped.
-- Fixed: the page no longer makes up a session or a "before logging began" row
-  from doubled connect/disconnect lines.
+- Fixed: the page no longer makes up a "before logging began" row from a
+  doubled disconnect line.
 
 ## 2026-11-19 (version 1.3)
 - Fixed: a station could sit in "Connected now" and then in "Last 24 hours"

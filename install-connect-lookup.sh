@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.4"
+VERSION="1.4.1"
 MARK="connect-lookup-installer-v1"
 CUSTOM=/etc/asterisk/custom
 LOGDIR=/var/log/asterisk/node-history
@@ -565,7 +565,9 @@ function build() {
         $last[$n] = $x['t'];
         $pe = $lastE[$n] ?? ''; $lastE[$n] = $x['e'];
         if ($x['e'] === 'C') {
-            if (!isset($open[$n])) $open[$n] = ['node' => $n, 'start' => $x['t'], 'end' => null];
+            // a second C with no D in between means the link was set up again (for example after a restart): the earlier visit ended then
+            if (isset($open[$n])) { $s = $open[$n]; $s['end'] = $x['t']; $sess[] = $s; }
+            $open[$n] = ['node' => $n, 'start' => $x['t'], 'end' => null];
         } else {
             if (isset($open[$n])) { $s = $open[$n]; $s['end'] = $x['t']; $sess[] = $s; unset($open[$n]); }
             elseif ($pe !== 'D') { $sess[] = ['node' => $n, 'start' => null, 'end' => $x['t']]; }
