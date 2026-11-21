@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5.7"
+VERSION="1.5.8"
 MARK="connect-lookup-installer-v1"
 ACCESS="panel-access.php"   # the switch's settings and password hash, next to index.php (never published, never contains the plain password)
 CUSTOM=/etc/asterisk/custom
@@ -950,6 +950,37 @@ html.ph body.wp #wrap{display:block}
 .opt{margin:10px 0 0;font-size:13px;color:#aaa}
 .opt label{cursor:pointer}
 .opt input{vertical-align:middle;margin-right:6px}
+@media (max-width:700px){
+body{padding:10px}
+h1{font-size:18px}
+h2{margin:18px 0 6px}
+#main table,#main thead,#main tbody,#main tr,#main td{display:block;width:auto;max-width:none}
+#main thead{display:none}
+#main tr{position:relative;margin:0 0 8px;padding:5px 10px;background:#161616;border:1px solid #2a2a2a;border-radius:6px}
+#main td{position:relative;padding:2px 0 2px 7.4em;border:0;min-width:0;overflow-wrap:anywhere}
+#main td::before{position:absolute;left:0;top:2px;width:7em;color:#888;font-size:12px;font-weight:600}
+#main td[data-start]{min-width:0}
+#main td.empty{padding-left:0}
+#nowBody td:nth-child(1)::before{content:"Node"}
+#nowBody td:nth-child(2)::before{content:"Callsign"}
+#nowBody td:nth-child(3)::before{content:"Name"}
+#nowBody td:nth-child(4)::before{content:"Through"}
+#nowBody td:nth-child(5)::before{content:"Location"}
+#nowBody td:nth-child(6)::before{content:"Connected"}
+#nowBody td:nth-child(7)::before{content:"So far"}
+#histBody td:nth-child(1)::before{content:"Connected"}
+#histBody td:nth-child(2)::before{content:"Disconnected"}
+#histBody td:nth-child(3)::before{content:"Duration"}
+#histBody td:nth-child(4)::before{content:"Node"}
+#histBody td:nth-child(5)::before{content:"Callsign"}
+#histBody td:nth-child(6)::before{content:"Name"}
+#histBody td:nth-child(7)::before{content:"Location"}
+#main td.empty::before{content:none}
+#main tr.keyed,#main tr.behind{box-shadow:none}
+#main tr.keyed td,#main tr.keyed td:first-child,#main tr.keyed td:last-child,#main tr.behind td,#main tr.behind td:first-child,#main tr.behind td:last-child{box-shadow:none;background:transparent}
+#main tr.keyed{background:#2a1212;border-color:#a63636;box-shadow:inset 0 0 0 1px #a63636}
+#main tr.behind{border-color:#6e3a3a}
+}
 </style>
 </head>
 <body<?php if ($PANEL !== null) echo ' class="wp"'; ?>>

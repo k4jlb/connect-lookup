@@ -3,6 +3,14 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-21 (version 1.5.8)
+- New: the page now fits a phone. On a screen narrower than about 700 pixels
+  (an iPhone held upright, for example) each row of the two tables becomes a small
+  card with a label in front of each item, so you only scroll down, never sideways.
+  On a computer or tablet the page looks exactly as before; nothing changed there.
+- If you already installed 1.5.7, run this installer again. Your password and your
+  Full control / Read-only level are kept.
+
 ## 2026-11-21 (version 1.5.7)
 - Fixed: some callsigns outside the US showed a dash instead of a name. For
   certain callsigns QRZ keeps the whole name in the first-name field and leaves the
