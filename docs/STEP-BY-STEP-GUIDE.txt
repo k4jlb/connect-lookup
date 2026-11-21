@@ -101,8 +101,15 @@ STEP 6 - Install
   It shows what it is going to do and asks:
     Install Connect Lookup for node 123456?
     Type  y  and press Enter to go ahead, or just press Enter to cancel:
-  Type  y  and press Enter. It takes about a minute and prints six steps. At
-  the end it says "Done" and prints the web address to open.
+  Type  y  and press Enter. If your node has the connect/disconnect web app, it
+  then asks:
+    Panel switch password
+    Password (Enter to skip):
+  This is for the Full control / Read-only switch (see "The Full control /
+  Read-only switch" below). Type a password of at least 6 characters, then type
+  it again to confirm (nothing is shown while you type), or just press Enter to
+  skip it for now. It takes about a minute and prints six steps. At the end it
+  says "Done" and prints the web address to open.
 
 STEP 7 - Open the page
   In a web browser on any computer on your network, open the address it
@@ -184,6 +191,32 @@ THE OPTIONAL PANEL ON THE RIGHT
     Connect Lookup leaves your favorites alone too.
 
 ==========================================================================
+THE FULL CONTROL / READ-ONLY SWITCH
+==========================================================================
+  At the very top of the panel, right beside the word node-connect, there is a
+  switch that shows either "Full control: ON" or "Full control: OFF (read-only)".
+
+  - READ-ONLY: visitors can only look. A first install starts this way.
+  - FULL CONTROL: visitors can connect, disconnect, monitor and use favorites.
+    Only the node owner can turn it on, with the password. This changes the
+    setting on the node, so it applies to everyone who opens the page, not just
+    you, and it stays that way, through reboots and updates, until you turn it off.
+  - Clicking the switch asks for the password you chose at install. A browser
+    that gave the right password stays unlocked for up to 8 hours, or until you
+    turn Full control OFF. Turning it OFF never asks for the password and locks
+    the browser again, so turning it back ON asks for the password. After 5 wrong tries
+    in 10 minutes, further tries are held back (one every 5 minutes).
+  - If you pressed Enter to skip the password, the switch is greyed out and the
+    panel stays on Read-only. To set a password (or change it, or if you forgot
+    it), log in to the node and type:
+        sudo bash install-connect-lookup.sh --password
+    It asks for the new password twice. Nothing is shown while you type.
+  - Only a scrambled hash of the password is kept on your node, in
+    /var/www/html/connect-lookup/panel-access.php (readable only by root and the
+    web server). The password itself is never saved, shown or sent anywhere.
+  - Updating the installer later keeps your password and the current setting.
+
+==========================================================================
 THE OPTIONAL OUTLINE CHECKBOX
 ==========================================================================
   There is nothing to choose when you install. At the top of the page there are
@@ -254,5 +287,5 @@ VERIFY YOUR COPY (optional)
   On the node:
     sha256sum install-connect-lookup.sh
   should print:
-    0e88727b811dbfdc24e5889f7675b550252ed7425470289ed040741b32e7fedf
+    aeba848cbcbc399f22105fc8938e4fe53f135ec5ab8fd3303a4f3f582809923e
   You can also read the whole script in any text editor before running it.
