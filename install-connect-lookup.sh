@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5.2"
+VERSION="1.5.3"
 MARK="connect-lookup-installer-v1"
 CUSTOM=/etc/asterisk/custom
 LOGDIR=/var/log/asterisk/node-history
@@ -804,9 +804,9 @@ a.nl{color:inherit}
 .echo td:not(.live), .echo td:not(.live) a { color: #c4e8ff; }
 td{font-variant-numeric:tabular-nums}
 td[data-start]{min-width:7.5em;white-space:nowrap}
-tr.keyed td{background:#2a1212;box-shadow:inset 0 2px 0 #b83c3c,inset 0 -2px 0 #b83c3c}
-tr.keyed td:first-child{box-shadow:inset 2px 0 0 #b83c3c,inset 0 2px 0 #b83c3c,inset 0 -2px 0 #b83c3c}
-tr.keyed td:last-child{box-shadow:inset -2px 0 0 #b83c3c,inset 0 2px 0 #b83c3c,inset 0 -2px 0 #b83c3c}
+tr.keyed td{background:#2a1212;box-shadow:inset 0 2px 0 #a63636,inset 0 -2px 0 #a63636}
+tr.keyed td:first-child{box-shadow:inset 2px 0 0 #a63636,inset 0 2px 0 #a63636,inset 0 -2px 0 #a63636}
+tr.keyed td:last-child{box-shadow:inset -2px 0 0 #a63636,inset 0 2px 0 #a63636,inset 0 -2px 0 #a63636}
 tr.behind td{box-shadow:inset 0 1px 0 #6e3a3a,inset 0 -1px 0 #6e3a3a}
 tr.behind td:first-child{box-shadow:inset 1px 0 0 #6e3a3a,inset 0 1px 0 #6e3a3a,inset 0 -1px 0 #6e3a3a}
 tr.behind td:last-child{box-shadow:inset -1px 0 0 #6e3a3a,inset 0 1px 0 #6e3a3a,inset 0 -1px 0 #6e3a3a}
@@ -1129,6 +1129,9 @@ header{display:flex !important;align-items:center !important;flex-wrap:wrap !imp
 header small{display:none !important}
 a.cl-echo-call,a.cl-echo-call:visited{color:#ffffff !important}
 @media (max-width:600px){table.grid,table.favs,#nodeForm{width:100% !important;margin-left:0 !important;margin-right:0 !important}table.grid,table.favs{font-size:13px !important}.twrap{overflow-x:auto !important}}
+/* the app paints keyed rows plain maroon and the favorites number column pure red: both toned down to match the page */
+table.grid tr.tColor td,table.grid tr.rColor td,table.grid tr.rColor td a{background-color:#3b1616 !important}
+table.favs tbody tr td:first-child{filter:saturate(.45) brightness(.8)}
 CL_EOF_PANEL_CSS
 }
 
@@ -1162,11 +1165,13 @@ if (!E) {
 var known = {};
 if (data && data.sessions) for (var j = 0; j < data.sessions.length; j++) { var x = data.sessions[j]; if (x.call && /^3[0-9]{6}$/.test(String(x.node))) known[String(x.node)] = String(x.call).trim(); }
 // A callsign at the start of a name cell opens its QRZ page (same address Connect Lookup uses); -L / -R style endings are dropped for the address. A link the cell already had is replaced.
+// In the Favorites list the Name column then shows only the callsign (the words after it are left out); other tables keep their text.
 function linkCall(cell) {
   if (cell.querySelector('a.cl-qrz')) return;
   var kids = cell.children.length;
   if (kids > 1 || (kids === 1 && cell.children[0].tagName !== 'A')) return;
   var txt = cell.textContent;
+  var only = !!(cell.closest && cell.closest('table.favs'));
   var m = txt.match(/^(\s*)([A-Za-z0-9]{1,3}[0-9][A-Za-z]{1,4}(?:\/[A-Za-z0-9]+)?(?:-[A-Za-z0-9]{1,3})?)(?=[\s,;:]|$)/);
   if (!m) return;
   var a = doc.createElement('a');
@@ -1181,7 +1186,7 @@ function linkCall(cell) {
   cell.textContent = '';
   if (m[1]) cell.appendChild(doc.createTextNode(m[1]));
   cell.appendChild(a);
-  if (rest) cell.appendChild(doc.createTextNode(rest));
+  if (rest && !only) cell.appendChild(doc.createTextNode(rest));
 }
 var need = [];
 var tables = doc.querySelectorAll('table.grid, table.favs');
@@ -1277,6 +1282,7 @@ find_panel_app() {
   for d in /var/www/html/*/; do
     d=${d%/}
     [ "$d" = "$WEB" ] && continue
+    case "$(basename "$d")" in *bak*|*.old|*-old|*_old|*.orig|*backup*|*~) continue ;; esac   # a backup copy of the app is not the app
     if [ -f "$d/api/index.php" ] && [ -f "$d/js/main.js" ] && [ -f "$d/include/viewUtils.php" ] \
        && grep -q 'getCpuTemp' "$d/api/index.php" 2>/dev/null; then
       printf '/%s/\n' "$(basename "$d")"
@@ -1286,13 +1292,27 @@ find_panel_app() {
   return 1
 }
 
-# Default favorites: added once, only when the node has none yet. After that they belong to the person:
-# anything they change or delete is never put back (a marker file remembers that this was done).
+# The app's own sample list: the file it ships (favorites-Sample.ini) with its long [general] list, never edited
+# (the app leaves a before-edit copy beside the file the first time anyone edits the list through it).
+is_untouched_sample() {
+  local f=$1 d
+  d=$(dirname "$f")
+  [ "$(basename "$f")" = "favorites-Sample.ini" ] || return 1
+  grep -q '=== SELECT ===' "$f" 2>/dev/null || return 1
+  [ "$(grep -c '^[[:space:]]*label\[\]' "$f" 2>/dev/null)" -ge 20 ] || return 1
+  [ "$(grep -c '^\[' "$f")" = 1 ] && grep -q '^\[general\]' "$f" || return 1
+  ls "$d"/favorites*before-edit* >/dev/null 2>&1 && return 1
+  return 0
+}
+
+# Default favorites: added once, only when the node has none yet (the app's own untouched sample list does not count as favorites,
+# and that sample file is never touched: the defaults go into favorites.ini, which the app shows first). After that they belong to the person: anything they change or delete is never put back (a marker file remembers that this was done).
 seed_favorites() {
-  local d=$1 mk="$WEB/.favorites-seeded" f c n=0 empty="" new owner
+  local d=$1 mk="$WEB/.favorites-seeded" f c n=0 empty="" new
   if [ -e "$mk" ]; then note "default favorites: handled by an earlier install - left alone"; return 0; fi
   for f in "$d"/favorites*.ini; do
     [ -f "$f" ] || continue
+    if is_untouched_sample "$f"; then continue; fi
     c=$(grep -c '^[[:space:]]*label\[\]' "$f" 2>/dev/null || true)
     n=$(( n + ${c:-0} ))
     [ "${c:-0}" = 0 ] && [ -z "$empty" ] && empty=$f

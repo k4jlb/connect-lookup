@@ -3,6 +3,21 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-20 (version 1.5.3)
+- Changed: in the panel's Favorites list the Name column now shows only the
+  callsign (a link to its QRZ page); the words that followed it are left out.
+  Other tables are unchanged.
+- Changed: the red box around a transmitting station is a touch fainter. In the
+  panel, the app's own reds are toned down too: the far-left number column of the
+  Favorites list and the "PTT Keyed" and keyed-station rows under Node Connection.
+- Changed: default favorites. A node whose favorites are only the long sample list
+  that comes with the app (never edited) now gets the defaults, in a new favorites
+  list; the sample file is not touched. A list that has been edited, or any
+  favorites file with entries of its own, is still never touched.
+- Fixed: when the node also has an old backup copy of the connect app (a folder
+  whose name says bak, old, orig or backup), the installer no longer picks the
+  backup for the panel.
+
 ## 2026-11-20 (version 1.5.2)
 - New: an optional panel on the right of the page that shows your node's own
   connect / disconnect / monitor / favorites page, restyled to match, so all of it

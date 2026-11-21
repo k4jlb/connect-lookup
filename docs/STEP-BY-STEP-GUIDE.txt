@@ -170,15 +170,18 @@ THE OPTIONAL PANEL ON THE RIGHT
   - It is OFF until you tick it. Each browser remembers its own choice.
   - The panel shows that app beside Connect Lookup, so you can connect,
     disconnect, monitor, use DTMF and add, edit or delete favorites on one page.
-    Callsigns in the name columns open their QRZ page (EchoLink ones are white).
+    In the Favorites list the Name column shows just the callsign, and callsigns
+    open their QRZ page (EchoLink ones are white).
     The CPU temperature is at the top right (refreshed every 10 seconds, shown
     in your local time).
   - If that app is not installed, nothing is added and the panel stays off.
     Install it, then run this installer again.
-  - DEFAULT FAVORITES: if the node has no favorites yet, a few defaults are added
-    once. Change or delete them any way you like. They are never put back, and
-    updating this installer never touches your favorites. Removing Connect
-    Lookup leaves your favorites alone too.
+  - DEFAULT FAVORITES: if the node has no favorites yet (the long sample list
+    that comes with the app, if it was never edited, does not count), a few
+    defaults are added once, in a new favorites list; the sample file itself is
+    not touched. Change or delete them any way you like. They are never put
+    back, and updating this installer never touches your favorites. Removing
+    Connect Lookup leaves your favorites alone too.
 
 ==========================================================================
 THE OPTIONAL OUTLINE CHECKBOX
@@ -251,5 +254,5 @@ VERIFY YOUR COPY (optional)
   On the node:
     sha256sum install-connect-lookup.sh
   should print:
-    ad0098f5d1ae1a87c1c11c393d1fae6c87e5dd5890d2aadb9dee12bdf88b2599
+    0e88727b811dbfdc24e5889f7675b550252ed7425470289ed040741b32e7fedf
   You can also read the whole script in any text editor before running it.

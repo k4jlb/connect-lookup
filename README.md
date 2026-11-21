@@ -42,7 +42,7 @@ curl -fLO https://raw.githubusercontent.com/k4jlb/connect-lookup/main/install-co
 ```
 
 Check the download is intact. It should print exactly this:
-`ad0098f5d1ae1a87c1c11c393d1fae6c87e5dd5890d2aadb9dee12bdf88b2599`
+`0e88727b811dbfdc24e5889f7675b550252ed7425470289ed040741b32e7fedf`
 
 ```
 sha256sum install-connect-lookup.sh
@@ -79,14 +79,16 @@ checkbox at the top of the page:
 - It is **off** until you tick it, and each browser remembers its own choice.
 - The panel shows that app beside Connect Lookup, restyled to match, so you can
   connect, disconnect, monitor, use DTMF and add, edit or delete favorites without
-  leaving the page. Callsigns in the name columns open their QRZ page in a new tab (EchoLink callsigns are shown in white so they are easy to tell apart). EchoLink favorites show the callsign. The CPU temperature is
+  leaving the page. In the Favorites list the Name column shows just the callsign, and callsigns open their QRZ page in a new tab (EchoLink callsigns are shown in white so they are easy to tell apart). EchoLink favorites show the callsign. The CPU temperature is
   shown at the top right and refreshes every 10 seconds, in your local time.
 - If that app is not installed, nothing is added and the panel stays off. Install
   it, then run this installer again.
-- **Default favorites.** If the node has no favorites yet, a few default ones are
-  added once. Change or delete them any way you like: they are never put back, and
-  updating this installer never touches your favorites. Removing Connect Lookup
-  leaves your favorites alone too.
+- **Default favorites.** If the node has no favorites yet (the long sample list that
+  comes with the app, if it was never edited, does not count), a few default ones
+  are added once, in a new favorites list; the sample file itself is not touched.
+  Change or delete them any way you like: they are never put back, and updating
+  this installer never touches your favorites. Removing Connect Lookup leaves your
+  favorites alone too.
 
 ## The optional outline checkbox
 
