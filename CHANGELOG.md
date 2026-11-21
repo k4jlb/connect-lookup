@@ -3,6 +3,34 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-20 (version 1.5.5)
+- New: a **Full control / Read-only switch** at the very top of the panel, right
+  beside the word node-connect. Full control lets visitors connect, disconnect,
+  monitor and use favorites; Read-only lets them only look. It changes the app's
+  visitor level on the node, so it applies to everyone, not just one browser, and it
+  stays as the owner left it through reboots and updates.
+- New: the switch is protected by a password chosen by the node owner. The
+  installer asks for it once (type it twice, hidden; press Enter to skip). Only a
+  scrambled hash is saved (`panel-access.php`, readable only by root and the web
+  server); the password is never stored or published. Set or change it any time:
+  `sudo bash install-connect-lookup.sh --password`. Without a password the switch
+  is greyed out and the panel stays on Read-only.
+- New: after 5 wrong passwords in 10 minutes, further tries are held back (one
+  per 5 minutes). A browser that gave the right password stays unlocked for up to 8 hours, or until
+  Full control is turned OFF. Turning it OFF never asks for the password and locks
+  the browser again, so turning it back ON asks for the password.
+- Changed: updating no longer resets the choice. Once the switch has been set up,
+  an update leaves its current Full control / Read-only setting and password alone.
+  On a first install the visitor level is set to Read-only; the owner turns Full
+  control on with the switch and the password.
+- Changed: the "node-connect" title bar of the panel now holds the switch, and the
+  Reload button sits at the right.
+
+## 2026-11-20 (version 1.5.4)
+- Changed: the node-connect panel now works right after an install or an update,
+  with no login: its connect, disconnect, monitor and favorites controls are
+  switched on by the installer. Nothing else in the app's own settings is changed.
+
 ## 2026-11-20 (version 1.5.3)
 - Changed: in the panel's Favorites list the Name column now shows only the
   callsign (a link to its QRZ page); the words that followed it are left out.

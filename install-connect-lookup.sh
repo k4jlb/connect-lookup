@@ -14,8 +14,9 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5.3"
+VERSION="1.5.5"
 MARK="connect-lookup-installer-v1"
+ACCESS="panel-access.php"   # the switch's settings and password hash, next to index.php (never published, never contains the plain password)
 CUSTOM=/etc/asterisk/custom
 LOGDIR=/var/log/asterisk/node-history
 WEB=/var/www/html/connect-lookup
@@ -27,6 +28,7 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 NODE=""
 YES=0
 QRZ=0
+PWSET=0
 DELHIST=0
 MODE=install
 CHANGED=0
@@ -74,6 +76,10 @@ Options:
   --check            run the checks only, change nothing
   --qrz              also ask for your own free QRZ.com login, so names can be
                      found for callsigns outside the US (optional)
+  --password         set or change the password for the panel's Full control /
+                     Read-only switch (the switch is at the top of the panel,
+                     beside the word node-connect). Needs Connect Lookup to be
+                     installed already.
   --yes              do not ask for confirmation
   --uninstall        remove everything this installer added
   --delete-history   with --uninstall: also delete the saved connection history
@@ -742,6 +748,113 @@ function build() {
     unset($s);
     return ['now' => $now, 'sessions' => $sess];
 }
+// ---- Full control / Read-only switch for the panel ----
+// panel-access.php (written by the installer, next to this file) holds the app's settings-file path, the row and the two levels,
+// and the HASH of the switch password. The password itself is never stored anywhere.
+function perm_cfg() {
+    static $c = false;
+    if ($c === false) {
+        $f = __DIR__ . '/panel-access.php';
+        $c = is_readable($f) ? include $f : null;
+        if (!is_array($c) || !isset($c['db'], $c['id'], $c['full'], $c['ro'])) $c = null;
+    }
+    return $c;
+}
+function perm_pdo($c) {
+    $p = new PDO('sqlite:' . $c['db']);
+    $p->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $p->exec('PRAGMA busy_timeout=5000');
+    return $p;
+}
+function perm_get($c) {
+    try {
+        $s = perm_pdo($c)->prepare('select val from cfg where cfg_id = ?');
+        $s->execute([(int)$c['id']]);
+        $v = $s->fetchColumn();
+        return $v === false ? null : (int)$v;
+    } catch (Throwable $e) { return null; }
+}
+function perm_set($c, $lvl) {
+    try {
+        $s = perm_pdo($c)->prepare('insert or replace into cfg (cfg_id, val, updated) values (?, ?, ?)');
+        $s->execute([(int)$c['id'], (string)(int)$lvl, time()]);
+        return true;
+    } catch (Throwable $e) { return false; }
+}
+function perm_token($c, $exp) { return $exp . '.' . hash_hmac('sha256', 'cl-perm|' . $exp, (string)$c['hash']); }
+function perm_unlocked($c) {
+    // a browser that gave the right password stays unlocked for 8 hours (signed cookie; changing the password locks every browser again)
+    if ((string)($c['hash'] ?? '') === '') return false;
+    $t = (string)($_COOKIE['cl_perm'] ?? '');
+    $p = explode('.', $t, 2);
+    if (count($p) !== 2 || !ctype_digit($p[0]) || (int)$p[0] < time()) return false;
+    return hash_equals(perm_token($c, (int)$p[0]), $t);
+}
+function perm_fail_file() { return sys_get_temp_dir() . '/connect-lookup-auth.json'; }
+function perm_wait() {
+    // after 5 wrong passwords in 10 minutes, one more try is allowed only every 5 minutes
+    $f = perm_fail_file();
+    $a = is_readable($f) ? json_decode((string)@file_get_contents($f), true) : [];
+    $now = time();
+    $a = array_values(array_filter(is_array($a) ? $a : [], fn($t) => is_int($t) && $t > $now - 600));
+    if (count($a) < 5) return 0;
+    return max(0, max($a) + 300 - $now);
+}
+function perm_note($ok) {
+    $fh = @fopen(perm_fail_file(), 'c+');
+    if (!$fh) return;
+    flock($fh, LOCK_EX);
+    $a = json_decode((string)stream_get_contents($fh), true);
+    $now = time();
+    $a = ($ok || !is_array($a)) ? [] : array_values(array_filter($a, fn($t) => is_int($t) && $t > $now - 600));
+    if (!$ok) $a[] = $now;
+    ftruncate($fh, 0); rewind($fh); fwrite($fh, json_encode($a));
+    flock($fh, LOCK_UN); fclose($fh);
+}
+if (isset($_GET['perm'])) {
+    header('Content-Type: application/json'); header('Cache-Control: no-store');
+    $c = perm_cfg();
+    if (!$c) { echo json_encode(['enabled' => false]); exit; }
+    $can = (string)($c['hash'] ?? '') !== '';
+    $err = ''; $unl = false; $lock = false;
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $b = json_decode((string)file_get_contents('php://input', false, null, 0, 2000), true);
+        $mode = is_array($b) ? (string)($b['mode'] ?? '') : '';
+        if (($_SERVER['HTTP_X_CL_PERM'] ?? '') !== '1' || ($mode !== 'full' && $mode !== 'ro')) {
+            $err = 'Bad request.';
+        } elseif (!$can) {
+            $err = 'No password has been set for this switch yet. On the node, run the installer with --password.';
+        } else {
+            $ok = ($mode === 'ro') || perm_unlocked($c);   // turning Full control OFF never asks for the password
+            if (!$ok) {
+                $w = perm_wait();
+                if ($w > 0) {
+                    $err = 'Too many wrong passwords. Try again in ' . (int)ceil($w / 60) . ' minute(s).';
+                } else {
+                    $pw = (is_array($b) && is_string($b['pw'] ?? null)) ? $b['pw'] : '';
+                    if ($pw !== '' && password_verify($pw, (string)$c['hash'])) {
+                        $ok = true; $unl = true; perm_note(true);
+                        $exp = time() + 28800;
+                        setcookie('cl_perm', perm_token($c, $exp), ['expires' => $exp, 'path' => rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/', 'secure' => !empty($_SERVER['HTTPS']), 'httponly' => true, 'samesite' => 'Strict']);
+                    } else {
+                        perm_note(false); usleep(700000);
+                        $err = 'Wrong password.';
+                    }
+                }
+            }
+            if ($ok && !perm_set($c, $mode === 'full' ? (int)$c['full'] : (int)$c['ro'])) $err = "The change could not be saved: the web server cannot write the app's settings file.";
+            if ($ok && $err === '' && $mode === 'ro') {
+                // turned OFF: lock this browser again, so turning Full control back ON asks for the password
+                $lock = true;
+                setcookie('cl_perm', '', ['expires' => time() - 3600, 'path' => rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/', 'secure' => !empty($_SERVER['HTTPS']), 'httponly' => true, 'samesite' => 'Strict']);
+            }
+        }
+    }
+    $cur = perm_get($c);
+    $o = ['enabled' => true, 'full' => $cur === (int)$c['full'], 'canChange' => $can, 'unlocked' => !$lock && ($unl || perm_unlocked($c))];
+    if ($err !== '') $o['error'] = $err;
+    echo json_encode($o); exit;
+}
 if (isset($_GET['echo'])) { header('Content-Type: application/json'); header('Cache-Control: no-store'); echo json_encode(echo_lookup((string)$_GET['echo']), JSON_FORCE_OBJECT); exit; }
 if (isset($_GET['keyed'])) { header('Content-Type: application/json'); header('Cache-Control: no-store'); echo json_encode(add_keyed([])); exit; }
 if (isset($_GET['json'])) {
@@ -818,10 +931,20 @@ body.wp #main{overflow-x:auto}
 body.wp #panel{display:flex;flex-direction:column;position:sticky;top:16px;height:calc(100vh - 32px);border:1px solid #2a2a2a;border-radius:6px;overflow:hidden;background:#161616}
 html.ph body.wp #panel{display:none}
 html.ph body.wp #wrap{display:block}
-#panelbar{display:flex;align-items:center;gap:14px;padding:6px 10px;border-bottom:1px solid #2a2a2a;font-size:13px;color:#999}
-#panelbar b{color:#9ecbff;font-weight:600;margin-right:auto}
+#panelbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:6px 10px;border-bottom:1px solid #2a2a2a;font-size:13px;color:#999}
+#panelbar b{color:#9ecbff;font-weight:600}
 #panelbar button{background:none;border:0;padding:0;font:inherit;color:#7cc4ff;cursor:pointer}
 #panelbar button:hover{text-decoration:underline}
+#panelbar #panelReload{margin-left:auto}
+#panelbar #permBtn{border:1px solid #2f7d4f;border-radius:11px;padding:1px 10px;color:#7be0a0}
+#panelbar #permBtn.ro{border-color:#a33;color:#ff9c9c}
+#panelbar #permBtn.dim{opacity:.55;cursor:help}
+#panelbar #permBtn:hover{text-decoration:none;background:#1c1c1c}
+#permForm{display:flex;align-items:center;gap:6px;margin:0}
+#permForm[hidden]{display:none}
+#permForm input{width:9em;font:inherit;background:#1c1c1c;color:#e6e6e6;border:1px solid #333;border-radius:3px;padding:2px 6px}
+#permMsg{color:#e0b45f;font-size:12px}
+#permMsg:empty{display:none}
 #panelf{flex:1;width:100%;border:0;background:#111}
 @media (max-width:1100px){body.wp #wrap{grid-template-columns:1fr}body.wp #panel{position:static;height:85vh}}
 .opt{margin:10px 0 0;font-size:13px;color:#aaa}
@@ -853,7 +976,7 @@ html.ph body.wp #wrap{display:block}
 </div>
 <?php if ($PANEL !== null): $pe = htmlspecialchars($PANEL, ENT_QUOTES); ?>
 <aside id="panel">
-<div id="panelbar"><b>node-connect</b><button type="button" id="panelReload">Reload</button></div>
+<div id="panelbar"><b>node-connect</b><button type="button" id="permBtn" hidden></button><form id="permForm" hidden><input type="password" id="permPw" placeholder="Switch password" autocomplete="off" maxlength="200"><button type="submit">OK</button><button type="button" id="permCancel">Cancel</button></form><span id="permMsg"></span><button type="button" id="panelReload">Reload</button></div>
 <iframe id="panelf" title="node-connect" src="<?php echo $pe; ?>"></iframe>
 </aside>
 <?php endif; ?>
@@ -1054,6 +1177,56 @@ function poll(){
     if (rx.length || PANELREMOVE.length || pfn) { swap(d); strip(d); extra(d); if (!d.documentElement.getAttribute('data-cl-w')) { d.documentElement.setAttribute('data-cl-w', '1'); try { new MutationObserver(function(){ swap(d); strip(d); extra(d); }).observe(d.documentElement, {childList:true, subtree:true, characterData:true}); } catch (e) {} } }
   }
   if (PANELCSS || rx.length || PANELREMOVE.length || pfn) { setInterval(dress, 100); f.addEventListener('load', dress); }
+})();
+// Full control / Read-only switch (top of the panel, beside the word node-connect). Hidden unless the installer set it up on this node.
+(function(){
+  var btn = $('permBtn'), form = $('permForm'), pw = $('permPw'), msg = $('permMsg');
+  if (!btn || !form || !pw || !msg) return;
+  var st = null, timer = null;
+  function say(t, keep){ msg.textContent = t || ''; clearTimeout(timer); if (t && !keep) timer = setTimeout(function(){ msg.textContent = ''; }, 6000); }
+  function show(s){
+    st = s;
+    if (!s || !s.enabled) { btn.hidden = true; form.hidden = true; return; }
+    if (form.hidden) btn.hidden = false;
+    btn.className = (s.full ? '' : 'ro') + (s.canChange ? '' : ' dim');
+    btn.textContent = s.full ? 'Full control: ON' : 'Full control: OFF (read-only)';
+    btn.title = !s.canChange ? 'No password is set for this switch yet. On the node, run the installer with --password.'
+      : (s.full ? 'Click to turn full control off (read-only). No password needed.' : 'Click to turn full control on' + (s.unlocked ? '.' : '. Asks for the switch password.'));
+  }
+  function call(body){
+    var o = { method: body ? 'POST' : 'GET', cache: 'no-store', credentials: 'same-origin' };
+    if (body) { o.headers = { 'Content-Type': 'application/json', 'X-CL-Perm': '1' }; o.body = JSON.stringify(body); }
+    return fetch('?perm=1', o).then(function(r){ return r.json(); });
+  }
+  function load(){ call().then(show).catch(function(){}); }
+  function reloadPanel(){ var f = $('panelf'); if (f) f.src = f.getAttribute('src'); }
+  function send(pwd){
+    if (!st) return;
+    var b = { mode: st.full ? 'ro' : 'full' };
+    if (pwd) b.pw = pwd;
+    say('Working...', true);
+    call(b).then(function(s){
+      pw.value = '';
+      if (s.error) {
+        // a wrong password leaves the box open for another try; anything else closes it
+        var again = /^Wrong password/.test(s.error);
+        form.hidden = !again; show(s); say(s.error);
+        if (again) pw.focus();
+        return;
+      }
+      form.hidden = true; show(s); say('Saved.'); reloadPanel();
+    }).catch(function(){ say('Could not reach the node. Try again.'); });
+  }
+  btn.addEventListener('click', function(){
+    if (!st) return;
+    if (!st.canChange) { say(btn.title); return; }
+    if (st.full || st.unlocked) { send(''); return; }   // turning OFF never asks; turning ON asks unless this browser is unlocked
+    say(''); btn.hidden = true; form.hidden = false; pw.value = ''; pw.focus();
+  });
+  form.addEventListener('submit', function(e){ e.preventDefault(); if (pw.value) send(pw.value); });
+  $('permCancel').addEventListener('click', function(){ form.hidden = true; pw.value = ''; say(''); show(st); });
+  load();
+  setInterval(function(){ if (form.hidden) load(); }, 30000);
 })();
 poll();
 setInterval(poll, 3000);
@@ -1337,6 +1510,149 @@ seed_favorites() {
   : > "$mk"
 }
 
+# The panel's connect / disconnect / monitor / favorites controls only work when the app lets visitors use them.
+# The first time the switch is set up on a node (no panel-access.php yet), this sets the app's visitor level to READ-ONLY, so the panel
+# only looks until the node owner turns Full control on with the switch password. Later installs and updates never touch the level again.
+# The row number and the level are read from the app's own code; the app's settings file is found by what it contains and is written
+# as the user who owns it (so the app can keep using it). Nothing else in that file is changed.
+PA_DB=""; PA_ID=""; PA_FULL=""; PA_RO=""
+# Reads what the visitor level needs from the app's own code and settings file: PA_ID (the settings row), PA_FULL and PA_RO (the
+# "full" and "read only" levels) and PA_DB (the settings file). Returns 1 if the row, the full level or the file is missing
+# (PA_RO may still be empty: the Full control / Read-only switch needs it, plain full access does not).
+panel_access_info() {
+  local d=$1 f
+  PA_DB=""
+  PA_ID=$(sed -n "s/^define('publicPermission', *\([0-9][0-9]*\)).*/\1/p" "$d/include/CfgModel.php" 2>/dev/null | head -n1)
+  PA_FULL=$(sed -n "s/^define('PERMISSION_FULL', *\([0-9][0-9]*\)).*/\1/p" "$d/include/UserModel.php" 2>/dev/null | head -n1)
+  PA_RO=$(sed -n "s/^define('PERMISSION_READ_ONLY', *\([0-9][0-9]*\)).*/\1/p" "$d/include/UserModel.php" 2>/dev/null | head -n1)
+  [ -n "$PA_ID" ] && [ -n "$PA_FULL" ] || return 1
+  for f in /etc/*/*.db /var/lib/*/*.db "$d"/*.db; do
+    [ -f "$f" ] || continue
+    if grep -aq 'CREATE TABLE cfg' "$f" 2>/dev/null && grep -aq 'CREATE TABLE user' "$f" 2>/dev/null; then PA_DB=$f; break; fi
+  done
+  [ -n "$PA_DB" ]
+}
+
+set_panel_access() {
+  local d=$1 id full db owner out
+  panel_access_info "$d" || { warn "could not read the panel's access setting from the app, or could not find its settings file - the panel may ask for a login"; return 0; }
+  [ -n "$PA_RO" ] || { note "panel access: this version of the app has no read-only level, so its visitor level was left as it is"; return 0; }
+  id=$PA_ID; full=$PA_RO; db=$PA_DB   # $full holds the level that gets written: the app's READ-ONLY level
+  command -v php >/dev/null 2>&1 || { warn "php command line missing - the panel may ask for a login"; return 0; }
+  owner=$(stat -c %U "$db" 2>/dev/null)
+  local code='try { $p = new PDO("sqlite:" . $argv[1]); $p->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION); $p->exec("PRAGMA busy_timeout=5000");
+    $s = $p->prepare("select val from cfg where cfg_id = ?"); $s->execute([(int)$argv[2]]); $cur = $s->fetchColumn();
+    if ($cur !== false && (string)$cur === (string)(int)$argv[3]) { echo "same"; exit(0); }
+    $u = $p->prepare("insert or replace into cfg (cfg_id, val, updated) values (?, ?, ?)"); $u->execute([(int)$argv[2], (string)(int)$argv[3], time()]); echo "set";
+  } catch (Throwable $e) { echo "error"; exit(1); }'
+  if [ -n "$owner" ] && [ "$owner" != "$(id -un)" ] && command -v runuser >/dev/null 2>&1; then
+    out=$(runuser -u "$owner" -- php -r "$code" "$db" "$id" "$full" 2>/dev/null)
+  else
+    out=$(php -r "$code" "$db" "$id" "$full" 2>/dev/null)
+  fi
+  case "$out" in
+    set|same) : ;;
+    *) warn "could not change the panel's access setting - the panel may ask for a login" ;;
+  esac
+  return 0
+}
+
+# ----------------------------------------------------------------------
+#  Full control / Read-only switch (top of the panel, beside the word node-connect)
+# ----------------------------------------------------------------------
+PW_HASH=""
+# Asks for the switch password twice, hidden. Sets PW_HASH to its bcrypt hash. Returns 1 if skipped or it could not be made.
+ask_switch_password() {
+  local p1 p2 h tries=0 re='^\$2y\$[0-9]{2}\$[./A-Za-z0-9]{53}$'
+  PW_HASH=""
+  say ""
+  say "Panel switch password"
+  say "  At the top of the panel there is a switch: Full control (visitors can connect,"
+  say "  disconnect, monitor and use favorites) or Read-only (they can only look)."
+  say "  Only someone who knows this password can turn Full control on. It is kept on this node only as"
+  say "  a scrambled hash, never as readable text, and is never sent anywhere."
+  say "  Use at least 6 characters, or just press Enter to skip. If you skip, the switch"
+  say "  stays locked on Read-only (visitors can only look); you can set a password later with:"
+  say "    sudo bash $0 $NODE --password"
+  while [ "$tries" -lt 3 ]; do
+    read -r -s -p "  Password (Enter to skip): " p1 </dev/tty || { printf '\n'; return 1; }
+    printf '\n'
+    [ -n "$p1" ] || return 1
+    if [ "${#p1}" -lt 6 ]; then say "  That is too short - use at least 6 characters."; tries=$((tries + 1)); continue; fi
+    read -r -s -p "  Type it again: " p2 </dev/tty || { printf '\n'; return 1; }
+    printf '\n'
+    if [ "$p1" != "$p2" ]; then say "  The two did not match."; tries=$((tries + 1)); continue; fi
+    h=$(printf '%s' "$p1" | php -r 'echo password_hash(stream_get_contents(STDIN), PASSWORD_BCRYPT);' 2>/dev/null)
+    if [[ "$h" =~ $re ]]; then PW_HASH=$h; return 0; fi
+    warn "could not scramble the password with PHP - the switch password was not set"
+    return 1
+  done
+  say "  Too many tries - no password set."
+  return 1
+}
+
+# Writes panel-access.php next to index.php: the app's settings file, the row, the two levels and the password hash.
+# $1 = a new hash, or empty to keep the hash already there. Only the hash is ever stored, never the password.
+write_access_file() {
+  local new=$1 f="$WEB/$ACCESS" hash="" asked=0 re='^\$2y\$[0-9]{2}\$[./A-Za-z0-9]{53}$'
+  [ -n "$PA_DB" ] && [ -n "$PA_ID" ] && [ -n "$PA_FULL" ] && [ -n "$PA_RO" ] || return 1
+  [[ "$PA_DB" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
+  if [ -r "$f" ]; then
+    hash=$(sed -n "s/^[[:space:]]*'hash'[[:space:]]*=>[[:space:]]*'\([^']*\)'.*/\1/p" "$f" | head -n1)
+    grep -q "'asked'[[:space:]]*=>[[:space:]]*1" "$f" && asked=1
+  fi
+  [[ "$hash" =~ $re ]] || hash=""
+  if [ -n "$new" ]; then hash=$new; asked=1; fi
+  (
+    umask 077
+    {
+      printf '<?php\n'
+      printf '// %s - written by the Connect Lookup installer. Settings for the panel'"'"'s Full control / Read-only switch.\n' "$MARK"
+      printf '// It holds a password HASH only, never the password. Do not publish or share this file.\n'
+      printf 'return [\n'
+      printf "  'db' => '%s',\n" "$PA_DB"
+      printf "  'id' => %s,\n" "$PA_ID"
+      printf "  'full' => %s,\n" "$PA_FULL"
+      printf "  'ro' => %s,\n" "$PA_RO"
+      printf "  'asked' => %s,\n" "$asked"
+      printf "  'hash' => '%s',\n" "$hash"
+      printf '];\n'
+    } > "$f.tmp"
+  ) || return 1
+  if id www-data >/dev/null 2>&1; then chown root:www-data "$f.tmp" && chmod 640 "$f.tmp"; else chmod 644 "$f.tmp"; fi
+  mv -f "$f.tmp" "$f"
+}
+
+# On install/update: writes the switch's settings and, the first time, offers to set its password.
+# An existing password and the current Full/Read-only choice are never touched here.
+setup_switch() {
+  local f="$WEB/$ACCESS" had=0
+  [ -e "$f" ] && had=1
+  if [ -z "$PA_RO" ] || [ -z "$PA_DB" ]; then
+    [ "$had" = 1 ] || note "Full control / Read-only switch: not available (this version of the app has no read-only level or its settings file was not found)"
+    return 0
+  fi
+  if ! id www-data >/dev/null 2>&1; then
+    note "Full control / Read-only switch: not set up (no www-data web user found)"
+    return 0
+  fi
+  write_access_file "" || { warn "could not write the switch settings - the switch stays hidden"; return 0; }
+  if [ "$had" = 1 ]; then
+    note "Full control / Read-only switch: settings refreshed; your password and current choice were left as they are"
+  elif [ "$YES" = 1 ] || [ ! -r /dev/tty ]; then
+    note "Full control / Read-only switch: set up, locked (no password yet). Set one with:  sudo bash $0 $NODE --password"
+  else
+    if ask_switch_password && write_access_file "$PW_HASH"; then
+      note "Full control / Read-only switch: password saved"
+    else
+      note "Full control / Read-only switch: set up, locked (no password yet). Set one later with:  sudo bash $0 $NODE --password"
+    fi
+  fi
+  if ! runuser -u www-data -- test -w "$PA_DB" 2>/dev/null || ! runuser -u www-data -- test -w "$(dirname "$PA_DB")" 2>/dev/null; then
+    warn "the web server cannot write the app's settings file ($PA_DB), so the switch will not be able to change anything"
+  fi
+}
+
 setup_panel() {
   put 644 "$WEB/panel.css"        emit_panel_css
   put 644 "$WEB/panel.js"         emit_panel_js
@@ -1355,7 +1671,36 @@ setup_panel() {
     printf '%s\n' "$app" > "$WEB/panel.txt" && chmod 644 "$WEB/panel.txt"
     note "panel available ($app) - tick \"Show the node-connect panel\" at the top of the page"
   fi
-  seed_favorites "/var/www/html$(printf '%s' "$app" | sed 's:/$::')"
+  local ad="/var/www/html$(printf '%s' "$app" | sed 's:/$::')"
+  if [ -e "$WEB/$ACCESS" ]; then
+    # the switch was set up by an earlier install: its current Full control / Read-only choice is the owner's, so it is not reset
+    panel_access_info "$ad" || true
+    note "panel access: left as the Full control / Read-only switch has it"
+  else
+    set_panel_access "$ad"
+  fi
+  setup_switch
+  seed_favorites "$ad"
+}
+
+# --password: set or change the switch password on a node that already has Connect Lookup.
+do_password() {
+  [ -f "$WEB/index.php" ] && grep -q "$MARK" "$WEB/index.php" 2>/dev/null \
+    || die "Connect Lookup is not installed on this node yet. Install it first:  sudo bash $0 YOURNODE"
+  command -v php >/dev/null 2>&1 || die "The PHP command-line program is missing. Install it with:  sudo apt install php-cli"
+  id www-data >/dev/null 2>&1 || die "No www-data web user was found, so the switch cannot be used on this node."
+  local app ad
+  app=$(find_panel_app) || app=""
+  [ -n "$app" ] || die "The node-connect app was not found on this node, so there is no panel and no switch."
+  ad="/var/www/html$(printf '%s' "$app" | sed 's:/$::')"
+  panel_access_info "$ad" || die "Could not read the app's access setting or find its settings file."
+  [ -n "$PA_RO" ] || die "This version of the app has no read-only level, so the switch cannot be used."
+  [ -r /dev/tty ] || die "This needs a keyboard to type the password. Run it from your SSH window, not from a script."
+  ask_switch_password || { say "No password was set. Nothing was changed."; exit 0; }
+  write_access_file "$PW_HASH" || die "Could not save the switch settings."
+  say ""
+  say "Switch password saved. Browsers that had unlocked the switch with the old password"
+  say "must enter the new one. Open the panel and use the switch beside the word node-connect."
 }
 
 # ----------------------------------------------------------------------
@@ -1471,6 +1816,19 @@ setup_qrz() {
 # ----------------------------------------------------------------------
 #  Install
 # ----------------------------------------------------------------------
+# Addresses to open the page at: this node's own addresses, each once (no IPv6, no container bridge 172.17.x), the Tailscale one labeled.
+print_addresses() {
+  local ip ts=""
+  if command -v tailscale >/dev/null 2>&1; then ts=$(tailscale ip -4 2>/dev/null | head -1); fi
+  for ip in $(hostname -I 2>/dev/null); do
+    case "$ip" in *:*|172.17.*) continue ;; esac
+    [ -n "$ts" ] && [ "$ip" = "$ts" ] && continue
+    say "    http://$ip/connect-lookup/"
+  done
+  [ -n "$ts" ] && say "    http://$ts/connect-lookup/   (Tailscale)"
+  return 0
+}
+
 do_install() {
   CHANGED=1
 
@@ -1555,15 +1913,7 @@ do_install() {
   say "Done. Connect Lookup is installed for node $NODE."
   say ""
   say "Open it in a browser at one of these addresses:"
-  local ip
-  for ip in $(hostname -I 2>/dev/null); do
-    case "$ip" in *:*) continue ;; esac
-    say "    http://$ip/connect-lookup/"
-  done
-  if command -v tailscale >/dev/null 2>&1; then
-    ip=$(tailscale ip -4 2>/dev/null | head -1)
-    [ -n "$ip" ] && say "    http://$ip/connect-lookup/   (Tailscale)"
-  fi
+  print_addresses
   say ""
   say "Good to know:"
   say "  - Anyone who can reach this node's web server can open the page, like your"
@@ -1586,6 +1936,13 @@ do_install() {
   say "  - If the node-connect app is installed here, the panel shows it beside this page, and a"
   say "    few default favorites are added once if you have none. Change or delete them freely;"
   say "    they are never put back, and updating this installer never touches your favorites."
+  if [ -e "$WEB/$ACCESS" ]; then
+    say "  - At the top of the panel, beside the word node-connect, is a Full control / Read-only"
+    say "    switch. Full control lets visitors connect, disconnect, monitor and use favorites;"
+    say "    Read-only lets them only look. It starts on Read-only. Turning Full control on asks for the"
+    say "    switch password; turning it off does not, and locks it again."
+    say "    To set or change that password:  sudo bash $0 $NODE --password"
+  fi
   say "  - Once a day the node reads one line from GitHub (the newest version number). If a"
   say "    newer version than this one exists, the 'Version' line at the top of the page"
   say "    says so, with a red 'get it on GitHub' link that fades slowly in and out. It only"
@@ -1638,6 +1995,7 @@ do_uninstall() {
 
   say ""
   say "Connect Lookup has been removed. Other pages on this node, and your favorites, were not touched."
+  say "The app's visitor level (Full control or Read-only) was left as it is; you can change it in the app's own settings."
   say "Check:  sudo grep -n conlog $RPT   (no output is correct)"
 }
 
@@ -1648,6 +2006,7 @@ for a in "$@"; do
   case "$a" in
     --yes|-y)          YES=1 ;;
     --qrz)             QRZ=1 ;;
+    --password)        PWSET=1 ;;
     --check)           MODE=check ;;
     --uninstall)       MODE=uninstall ;;
     --delete-history)  DELHIST=1 ;;
@@ -1661,6 +2020,11 @@ done
 
 if [ "$MODE" = uninstall ]; then
   do_uninstall
+  exit 0
+fi
+
+if [ "$PWSET" = 1 ]; then
+  do_password
   exit 0
 fi
 
@@ -1684,6 +2048,8 @@ say "  2. Add six small helper scripts in $CUSTOM"
 say "  3. Add a background service, a daily cleanup job and a daily version check (systemd)"
 say "  4. Add two lines (connpgm and discpgm) to the [$NODE] section of"
 say "     $RPT, after saving a backup copy, and reload app_rpt"
+say "  5. Add a Full control / Read-only switch at the top of the panel and offer to set its"
+say "     password (press Enter to skip). On a first install the app's visitor level is set to Read-only."
 say "Nothing else is changed. node-connect and your other pages are left alone."
 say ""
 ask "Install Connect Lookup for node $NODE?" || cancelled

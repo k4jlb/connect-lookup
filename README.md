@@ -42,7 +42,7 @@ curl -fLO https://raw.githubusercontent.com/k4jlb/connect-lookup/main/install-co
 ```
 
 Check the download is intact. It should print exactly this:
-`0e88727b811dbfdc24e5889f7675b550252ed7425470289ed040741b32e7fedf`
+`aeba848cbcbc399f22105fc8938e4fe53f135ec5ab8fd3303a4f3f582809923e`
 
 ```
 sha256sum install-connect-lookup.sh
@@ -90,6 +90,37 @@ checkbox at the top of the page:
   this installer never touches your favorites. Removing Connect Lookup leaves your
   favorites alone too.
 
+## The Full control / Read-only switch
+
+At the very top of the panel, right beside the word **node-connect**, there is a
+switch: **Full control: ON** or **Full control: OFF (read-only)**.
+
+- **Read-only:** visitors can only look. This is how a first install starts.
+- **Full control:** visitors can connect, disconnect, monitor and use favorites.
+  Only the node owner can turn it on, with the switch password. The switch changes
+  the app's visitor level on the node, so it applies to everyone who opens the page,
+  and it stays that way, through reboots and updates, until the owner turns it off.
+- **The node owner's password.** The installer asks once: *Panel switch password*
+  (type it twice; it is not shown; press Enter to skip). Only someone who knows it
+  can flip the switch; the box asks for it when you click. A browser that gave the
+  right password stays unlocked for up to 8 hours, or until you turn Full control OFF.
+  Turning it OFF never asks for the password and locks the browser again, so turning
+  it back ON asks for the password. After 5 wrong tries in 10 minutes,
+  further tries are held back (one per 5 minutes).
+- **Skipped it?** The switch is greyed out and the panel stays on Read-only.
+  Set a password later (or change it):
+
+  ```
+  sudo bash install-connect-lookup.sh --password
+  ```
+
+- Only a scrambled hash of the password is stored on your node (in
+  `/var/www/html/connect-lookup/panel-access.php`, readable only by root and the web
+  server). The password itself is never saved, shown or sent anywhere, and it is not
+  part of this repository. Forgot it? Run the command above again to choose a new one.
+- Updating the installer keeps your password and the current Full control /
+  Read-only setting.
+
 ## The optional outline checkbox
 
 There is nothing to choose when you install. At the top of the page there are two
@@ -132,6 +163,9 @@ It puts `rpt.conf` back the way it was and keeps your saved history. Add
   nothing about your node is sent, and nothing is installed by it)
 - Adds two lines (`connpgm` and `discpgm`) to your node's section of
   `/etc/asterisk/rpt.conf`, after saving a backup copy next to it
+- If the node-connect panel is available: on a first install it sets the app's visitor
+  level to Read-only, and it adds `panel-access.php` (the switch's settings and
+  the password hash) in the same page folder
 - Installs two small standard packages (`curl`, `php-cli`) only if missing
 
 It refuses to continue if your node already uses `connpgm`/`discpgm` for
