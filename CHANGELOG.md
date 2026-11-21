@@ -3,6 +3,23 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-20 (version 1.5.2)
+- New: an optional panel on the right of the page that shows your node's own
+  connect / disconnect / monitor / favorites page, restyled to match, so all of it
+  is on one page. It has its own checkbox at the top ("Show the node-connect panel
+  on the right"), which starts unticked; each browser remembers its choice. The
+  installer finds that web app by what it contains; if it is not installed, nothing
+  is added. The panel shows EchoLink favorites with their callsigns, a note that
+  EchoLink favorites need EchoLink installed on the node, the CPU temperature
+  (refreshed every 10 seconds, in your local time), and callsigns in the name
+  columns that open their QRZ page in a new tab (EchoLink callsigns in white). The panel fits a phone screen (below Connect Lookup, tables sized to the screen).
+- New: default favorites. If the node has no favorites yet, a few defaults are
+  added once. They are never put back after you change or delete them, updating
+  never touches your favorites, and uninstalling leaves them alone.
+- Installer: adds `panel.css`, `panel.js`, `panel-words.txt` and
+  `panel-remove.txt` in the Connect Lookup folder, and `panel.txt` when the app is
+  found. An existing `panel.txt` is never overwritten.
+
 ## 2026-11-20 (version 1.5.1)
 - New: update notice. Once a day (a systemd timer, with a random delay of up to
   6 hours) the node reads the one-line file `VERSION` from this repository. If the

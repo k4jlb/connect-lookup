@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5.1"
+VERSION="1.5.2"
 MARK="connect-lookup-installer-v1"
 CUSTOM=/etc/asterisk/custom
 LOGDIR=/var/log/asterisk/node-history
@@ -561,6 +561,61 @@ function newer_version() {
     if (!preg_match('/^[0-9]+(\.[0-9]+){1,3}$/', $v)) return null;
     return version_compare($v, $cur, '>') ? $v : null;
 }
+function echolink_web($q) {
+    // same public EchoLink lookup page the background job uses (needs the session cookie it hands out first)
+    $url = getenv('CL_ELURL') ?: 'https://www.echolink.org/validation/node_lookup.jsp';
+    $ctx = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 8, 'header' => "User-Agent: ConnectLookup\r\n"]]);
+    $r = @file_get_contents($url, false, $ctx);
+    if ($r === false) return '';
+    $ck = [];
+    foreach (($http_response_header ?? []) as $h) if (stripos($h, 'Set-Cookie:') === 0) $ck[] = trim((string)strtok(substr($h, 11), ';'));
+    $ctx = stream_context_create(['http' => ['method' => 'POST', 'timeout' => 8,
+        'header' => "Content-Type: application/x-www-form-urlencoded\r\nUser-Agent: ConnectLookup\r\n" . ($ck ? 'Cookie: ' . implode('; ', $ck) . "\r\n" : ''),
+        'content' => 'call=' . $q]]);
+    $r = @file_get_contents($url, false, $ctx);
+    if ($r === false) return '';
+    $r = str_replace(["\r", "\n"], '', $r);
+    if (preg_match('~<td>([^<]+)</td><td align="right">' . $q . '</td>~', $r, $m)) {
+        $c = trim($m[1]);
+        return preg_match('~^[A-Za-z0-9/*-]{3,20}$~', $c) ? $c : '';
+    }
+    return '';
+}
+function echo_lookup($csv) {
+    $nodes = [];
+    foreach (explode(',', substr($csv, 0, 200)) as $n) {
+        $n = trim($n);
+        if (preg_match('/^3[0-9]{6}$/', $n)) $nodes[$n] = 1;
+        if (count($nodes) >= 12) break;
+    }
+    $out = [];
+    if (!$nodes) return $out;
+    $em = ei_map();
+    $cf = sys_get_temp_dir() . '/connect-lookup-echo.json';
+    $cache = is_readable($cf) ? (json_decode((string)@file_get_contents($cf), true) ?: []) : [];
+    $tries = 0; $dirty = false;
+    foreach (array_keys($nodes) as $n) {
+        $c = trim((string)($em[$n]['callsign'] ?? ''));
+        if ($c === '') {
+            $k = $cache[$n] ?? null;
+            if (is_array($k) && time() - (int)($k['t'] ?? 0) < ($k['c'] !== '' ? 86400 : 3600)) $c = (string)$k['c'];
+            elseif ($tries < 3) { $tries++; $c = echolink_web((int)substr($n, 1)); $cache[$n] = ['c' => $c, 't' => time()]; $dirty = true; }
+        }
+        if ($c !== '') $out[$n] = $c;
+    }
+    if ($dirty) @file_put_contents($cf, json_encode($cache), LOCK_EX);
+    return $out;
+}
+function panel_path() {
+    // optional right-hand panel: panel.txt holds ONE same-site path such as /node-connect/ ; nothing is shown without that file
+    $f = '/var/www/html/connect-lookup/panel.txt';
+    if (!is_readable($f)) return null;
+    $v = trim((string)@file_get_contents($f, false, null, 0, 200));
+    $v = trim((string)strtok($v, "\r\n"));
+    if (!preg_match('~^/[A-Za-z0-9._/-]{0,100}$~', $v)) return null;
+    if (strpos($v, '//') !== false || strpos($v, '..') !== false) return null;
+    return $v;
+}
 function node_info($nodes) {
     $want = array_flip($nodes);
     $out = [];
@@ -687,6 +742,7 @@ function build() {
     unset($s);
     return ['now' => $now, 'sessions' => $sess];
 }
+if (isset($_GET['echo'])) { header('Content-Type: application/json'); header('Cache-Control: no-store'); echo json_encode(echo_lookup((string)$_GET['echo']), JSON_FORCE_OBJECT); exit; }
 if (isset($_GET['keyed'])) { header('Content-Type: application/json'); header('Cache-Control: no-store'); echo json_encode(add_keyed([])); exit; }
 if (isset($_GET['json'])) {
     header('Content-Type: application/json');
@@ -694,6 +750,32 @@ if (isset($_GET['json'])) {
     $o = add_keyed(add_via(build())); $o['newer'] = newer_version();
     echo json_encode($o, JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
+}
+$PANEL = panel_path();
+$PCSS = ''; $PW = []; $PR = []; $PJS = '';
+if ($PANEL !== null) {
+    // panel.css: extra CSS applied inside the panel; panel-words.txt: lines  old|new  (or old, a TAB, then new, when old contains a | mark); plain text swaps, shown text only
+    $f = '/var/www/html/connect-lookup/panel.css';
+    if (is_readable($f)) $PCSS = (string)@file_get_contents($f, false, null, 0, 20000);
+    $f = '/var/www/html/connect-lookup/panel-words.txt';
+    if (is_readable($f)) foreach (array_slice(file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [], 0, 40) as $l) {
+        $l = rtrim($l, "\r");
+        if ($l === '' || $l[0] === '#' || (strpos($l, '|') === false && strpos($l, "\t") === false)) continue;
+        list($a, $b) = explode(strpos($l, "\t") !== false ? "\t" : '|', $l, 2);
+        if ($a === '' || strlen($a) > 80 || strlen($b) > 80) continue;
+        $PW[] = [$a, $b];
+    }
+    // panel.js: optional small script run inside the panel page as function(doc, data); doc = the panel's page, data = this page's connection data
+    $f = '/var/www/html/connect-lookup/panel.js';
+    if (is_readable($f)) $PJS = (string)@file_get_contents($f, false, null, 0, 20000);
+    // panel-remove.txt: one CSS selector per line; matching things are taken out of the panel page
+    $f = '/var/www/html/connect-lookup/panel-remove.txt';
+    if (is_readable($f)) foreach (array_slice(file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [], 0, 40) as $l) {
+        $l = trim($l);
+        if ($l === '' || $l[0] === '#' || strlen($l) > 120) continue;
+        if (!preg_match('/^[A-Za-z0-9#._\[\]="\' :*,>+~-]+$/', $l)) continue;
+        $PR[] = $l;
+    }
 }
 ?>
 <!doctype html>
@@ -728,16 +810,35 @@ tr.keyed td:last-child{box-shadow:inset -2px 0 0 #b83c3c,inset 0 2px 0 #b83c3c,i
 tr.behind td{box-shadow:inset 0 1px 0 #6e3a3a,inset 0 -1px 0 #6e3a3a}
 tr.behind td:first-child{box-shadow:inset 1px 0 0 #6e3a3a,inset 0 1px 0 #6e3a3a,inset 0 -1px 0 #6e3a3a}
 tr.behind td:last-child{box-shadow:inset -1px 0 0 #6e3a3a,inset 0 1px 0 #6e3a3a,inset 0 -1px 0 #6e3a3a}
+#wrap{display:block}
+#main{min-width:0}
+body.wp #wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,44%);gap:16px;align-items:start}
+body.wp #main{overflow-x:auto}
+#panel{display:none}
+body.wp #panel{display:flex;flex-direction:column;position:sticky;top:16px;height:calc(100vh - 32px);border:1px solid #2a2a2a;border-radius:6px;overflow:hidden;background:#161616}
+html.ph body.wp #panel{display:none}
+html.ph body.wp #wrap{display:block}
+#panelbar{display:flex;align-items:center;gap:14px;padding:6px 10px;border-bottom:1px solid #2a2a2a;font-size:13px;color:#999}
+#panelbar b{color:#9ecbff;font-weight:600;margin-right:auto}
+#panelbar button{background:none;border:0;padding:0;font:inherit;color:#7cc4ff;cursor:pointer}
+#panelbar button:hover{text-decoration:underline}
+#panelf{flex:1;width:100%;border:0;background:#111}
+@media (max-width:1100px){body.wp #wrap{grid-template-columns:1fr}body.wp #panel{position:static;height:85vh}}
 .opt{margin:10px 0 0;font-size:13px;color:#aaa}
 .opt label{cursor:pointer}
 .opt input{vertical-align:middle;margin-right:6px}
 </style>
 </head>
-<body>
+<body<?php if ($PANEL !== null) echo ' class="wp"'; ?>>
+<div id="wrap">
+<div id="main">
 <div class="sub" id="ver">Version @VERSION@</div>
 <h1>Connect Lookup - Node @NODE@</h1>
 <div class="sub" id="status">Loading...</div>
 <div class="opt"><label><input type="checkbox" id="behindBox">Outline the stations behind a link while that link is transmitting</label></div>
+<?php if ($PANEL !== null): ?>
+<div class="opt"><label><input type="checkbox" id="panelBox">Show the node-connect panel on the right</label></div>
+<?php endif; ?>
 <div class="opt"><a href="https://stats.allstarlink.org/stats/@NODE@/networkMap" target="_blank" rel="noopener noreferrer">Network map for node @NODE@</a> (AllStarLink stats site)</div>
 <h2>Connected now <span id="nowCount"></span></h2>
 <table>
@@ -749,7 +850,20 @@ tr.behind td:last-child{box-shadow:inset -1px 0 0 #6e3a3a,inset 0 1px 0 #6e3a3a,
 <thead><tr><th>Connected</th><th>Disconnected</th><th>Duration</th><th>Node</th><th>Callsign</th><th>Name</th><th>Description / Location</th></tr></thead>
 <tbody id="histBody"></tbody>
 </table>
+</div>
+<?php if ($PANEL !== null): $pe = htmlspecialchars($PANEL, ENT_QUOTES); ?>
+<aside id="panel">
+<div id="panelbar"><b>node-connect</b><button type="button" id="panelReload">Reload</button></div>
+<iframe id="panelf" title="node-connect" src="<?php echo $pe; ?>"></iframe>
+</aside>
+<?php endif; ?>
+</div>
 <script>
+try { if (localStorage.getItem('cl-panel') !== '1') document.documentElement.className = 'ph'; } catch (e) {}
+var PANELCSS = <?php echo json_encode($PCSS, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
+var PANELJS = <?php echo json_encode($PJS, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
+var PANELREMOVE = <?php echo json_encode($PR, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
+var PANELWORDS = <?php echo json_encode($PW, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
 var BEHIND = false;
 try { BEHIND = localStorage.getItem('cl-behind') === '1'; } catch (e) {}
 var data = null;
@@ -895,6 +1009,52 @@ function poll(){
     .catch(function(){ $('status').textContent = 'Update failed - retrying...'; });
 }
 (function(){ var b = $('behindBox'); b.checked = BEHIND; b.addEventListener('change', function(){ BEHIND = b.checked; try { localStorage.setItem('cl-behind', BEHIND ? '1' : '0'); } catch (e) {} applyKeyed(); }); })();
+(function(){
+  var b = $('panelBox'); if (!b) return;
+  var on = false; try { on = localStorage.getItem('cl-panel') === '1'; } catch (e) {}
+  b.checked = on;
+  b.addEventListener('change', function(){
+    document.documentElement.className = b.checked ? '' : 'ph';
+    try { localStorage.setItem('cl-panel', b.checked ? '1' : '0'); } catch (e) {}
+  });
+  var r = $('panelReload'), f = $('panelf');
+  if (r && f) r.addEventListener('click', function(){ f.src = f.getAttribute('src'); });
+  if (!f) return;
+  function esc(t){ return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  var rx = PANELWORDS.map(function(w){ return [new RegExp(esc(w[0]), 'gi'), w[1]]; });
+  function swap(d){
+    if (!rx.length || !d.body) return;
+    var wk = d.createTreeWalker(d.body, 4, null), n, i, v;
+    while ((n = wk.nextNode())) { v = n.nodeValue; for (i = 0; i < rx.length; i++) v = v.replace(rx[i][0], rx[i][1]); if (v !== n.nodeValue) n.nodeValue = v; }
+    var t = d.title; for (i = 0; i < rx.length; i++) t = t.replace(rx[i][0], rx[i][1]); if (t !== d.title) d.title = t;
+  }
+  var pfn = null;
+  if (PANELJS) { try { pfn = new Function('doc', 'data', PANELJS); } catch (e) {} }
+  function extra(d){ if (pfn) { try { pfn(d, data); } catch (e) {} } }
+  function strip(d){
+    var i, j, el, list, at;
+    for (i = 0; i < PANELREMOVE.length; i++) {
+      try { list = d.querySelectorAll(PANELREMOVE[i]); } catch (e) { continue; }
+      for (j = 0; j < list.length; j++) {
+        el = list[j];
+        if (el.tagName === 'INPUT' && el.type === 'checkbox') { el.checked = false; el.type = 'hidden'; el.setAttribute('data-cl-off', '1'); }
+        else if (el.parentNode && !el.getAttribute('data-cl-off')) el.parentNode.removeChild(el);
+      }
+    }
+    list = d.querySelectorAll('[data-cl-off]');
+    for (j = 0; j < list.length; j++) {
+      el = list[j]; el.checked = false;
+      for (i = 0; i < el.attributes.length; i++) { at = el.attributes[i]; if (at.value === 'true') el.setAttribute(at.name, 'false'); }
+    }
+  }
+  function dress(){
+    var d; try { d = f.contentDocument; } catch (e) { return; }
+    if (!d || !d.head || !d.documentElement) return;
+    if (!d.getElementById('cl-panel-css') && PANELCSS) { var st = d.createElement('style'); st.id = 'cl-panel-css'; st.textContent = PANELCSS; d.head.appendChild(st); }
+    if (rx.length || PANELREMOVE.length || pfn) { swap(d); strip(d); extra(d); if (!d.documentElement.getAttribute('data-cl-w')) { d.documentElement.setAttribute('data-cl-w', '1'); try { new MutationObserver(function(){ swap(d); strip(d); extra(d); }).observe(d.documentElement, {childList:true, subtree:true, characterData:true}); } catch (e) {} } }
+  }
+  if (PANELCSS || rx.length || PANELREMOVE.length || pfn) { setInterval(dress, 100); f.addEventListener('load', dress); }
+})();
 poll();
 setInterval(poll, 3000);
 setInterval(tick, 1000);
@@ -916,6 +1076,266 @@ put() {
   "$fn" | sed "s/@NODE@/$NODE/g; s/@VERSION@/$VERSION/g" > "$target.tmp" || die "Could not write $target"
   chmod "$mode" "$target.tmp"
   mv -f "$target.tmp" "$target" || die "Could not move $target into place"
+}
+
+emit_panel_css() { cat <<'CL_EOF_PANEL_CSS'
+/* Restyles the right-hand panel to match the Connect Lookup page: black, same fonts and colors. */
+html,body{background:#111 !important;color:#e6e6e6 !important;font:15px system-ui,sans-serif !important;scrollbar-color:#555 #111 !important}
+a{color:#7cc4ff !important}
+::-webkit-scrollbar{background:#111 !important}
+::-webkit-scrollbar-thumb{background:#555 !important}
+header{background:#111 !important;color:#9ecbff !important;border-bottom:1px solid #2a2a2a !important;border-radius:0 !important;font-size:0 !important}
+header a,header small{font-size:15px !important;margin-right:12px !important}
+/* the top line keeps only the name, version and node title: no login, logout, settings, users, touch screen or update links */
+header a[href*="/user/"],header a[href*="/cfg/"],header a[href*="/simple/"],header a[href*="github.com"]{display:none !important}
+h1,h2,h3{color:#9ecbff !important}
+table.favs thead tr,table.grid thead tr{background:#111 !important}
+table.favs th,table.grid th{color:#999 !important;font-weight:600 !important;font-size:13px !important}
+table.favs td,table.grid td,table.favs th,table.grid th{border-bottom:1px solid #2a2a2a !important}
+table.favs tbody tr:hover,table.grid tbody tr:hover{background:#1c1c1c !important}
+table.grid tr.gColor td{background:#111 !important}
+a.menu{background:#111 !important;color:#7cc4ff !important;border:1px solid #2a2a2a !important;border-radius:3px !important}
+a.menu:hover{background:#1c1c1c !important;text-decoration:underline !important}
+input[type=text],input[type=number],input[type=password],select,textarea{background:#1c1c1c !important;color:#e6e6e6 !important;border:1px solid #333 !important}
+input[type=button],input[type=submit],button,.button1{background:#222 !important;color:#e6e6e6 !important;border:1px solid #333 !important;border-radius:3px !important}
+input[type=button]:hover,input[type=submit]:hover,button:hover,.button1:hover{background:#333 !important}
+pre{background:#161616 !important;color:#e6e6e6 !important;border:1px solid #2a2a2a !important}
+.favEditPanel{background:#111 !important;border:1px solid #444 !important}
+/* the program's own logo and its outside links are not shown in this panel */
+img[src*="lscan" i],a[href*="lscan.info" i],a[href*="facebook" i],a[href*="idgsd" i]{display:none !important}
+/* nothing under the favorites list: file chooser, system details, temperature, Node Stats button and outside links */
+form:has(#_favsfile),#_favsfile,label[for="_favsfile"],#scanmsg,#statmsg,#cputemp,.m5,input[value="Node Stats"]{display:none !important}
+/* Connection Status table, node entry box and Favorites table: same width, about 0.4 inch of space on each side */
+table.grid,table.favs,#nodeForm{box-sizing:border-box !important;width:calc(100% - 0.8in) !important;max-width:none !important;margin-left:0.4in !important;margin-right:0.4in !important}
+#nodeForm fieldset{box-sizing:border-box !important;width:100% !important;margin:0 !important;border:1px solid #2a2a2a !important;border-radius:3px !important}
+/* bigger, easier-to-hit controls */
+#nodeForm input[type=text]{font-size:18px !important;padding:8px 10px !important;width:7.5em !important;margin:4px !important}
+#nodeForm input[type=button],#nodeForm input[type=submit],#nodeForm button{font-size:16px !important;padding:10px 16px !important;min-height:44px !important;margin:4px !important;cursor:pointer !important}
+#nodeForm input.small{font-size:14px !important;padding:8px 12px !important;min-height:38px !important}
+#nodeForm input[value="Connect"]{border-color:#2f7d4f !important}
+#nodeForm input[value="Disconnect"]{border-color:#a33 !important}
+#nodeForm input[type=checkbox]{transform:scale(1.4) !important;margin:0 8px 0 6px !important}
+#nodeForm label{font-size:15px !important}
+/* the box around the Connection Status table fills the whole width, so the table inside can too */
+.twrap{display:block !important;width:100% !important;max-width:none !important;box-sizing:border-box !important;overflow-x:visible !important}
+/* outlines: Add Favorite blue, Delete Favorite bright black (gray) */
+#nodeForm input[value="Add Favorite"]{border-color:#3b82f6 !important}
+#nodeForm input[value="Delete Favorite"]{border-color:#8a8a8a !important}
+/* EchoLink numbers: the leading 3 is only the connect code, so it is not shown (the text itself is unchanged) */
+td.cl-echo-num::first-letter{font-size:0 !important}
+#cl-echo-note{font-size:12px;color:#9a9a9a;margin:4px 0 6px;text-align:center}
+header{display:flex !important;align-items:center !important;flex-wrap:wrap !important}
+#cl-temp{margin-left:auto !important;align-self:center !important;font-size:15px !important;color:#e6e6e6 !important;white-space:nowrap !important;text-align:center !important}
+header small{display:none !important}
+a.cl-echo-call,a.cl-echo-call:visited{color:#ffffff !important}
+@media (max-width:600px){table.grid,table.favs,#nodeForm{width:100% !important;margin-left:0 !important;margin-right:0 !important}table.grid,table.favs{font-size:13px !important}.twrap{overflow-x:auto !important}}
+CL_EOF_PANEL_CSS
+}
+
+emit_panel_js() { cat <<'CL_EOF_PANEL_JS'
+// Runs inside the right-hand panel as function(doc, data).
+// EchoLink stations (3 + their EchoLink number) in the Favorites list and the connection table: callsign in the name cell, and the leading 3 hidden on screen.
+var lg = doc.querySelector('header a.logo'); if (lg && lg.textContent !== 'node-connect') lg.textContent = 'node-connect';
+// a short note under the favorites buttons
+if (!doc.getElementById('cl-echo-note')) {
+  var anchor = doc.querySelector('#nodeForm input[value="DTMF"]') || doc.querySelector('#nodeForm input[value="Edit Favorite"]');
+  if (anchor && anchor.parentNode) {
+    var note = doc.createElement('div');
+    note.id = 'cl-echo-note';
+    note.textContent = 'Note: EchoLink favorites only work if EchoLink is installed on this node.';
+    var after = anchor.nextElementSibling && anchor.nextElementSibling.tagName === 'BR' ? anchor.nextElementSibling : anchor;
+    after.parentNode.insertBefore(note, after.nextSibling);
+  }
+}
+var ct = doc.getElementById('cputemp'), hd = doc.querySelector('header');
+if (ct && hd) { var rawt = ct.textContent; var tb = doc.getElementById('cl-temp'); if (!tb) { tb = doc.createElement('span'); tb.id = 'cl-temp'; hd.appendChild(tb); }
+  if (tb.getAttribute('data-raw') !== rawt || !tb.__stamp) { tb.setAttribute('data-raw', rawt); tb.__stamp = new Date(); }
+  var sd = tb.__stamp, sh = sd.getHours(), sm = sd.getMinutes(); var stime = (sh % 12 || 12) + ':' + (sm < 10 ? '0' : '') + sm + ' ' + (sh >= 12 ? 'PM' : 'AM');
+  var tt = rawt.replace(/\s+/g, ' ').replace(/\s*\/\s*-?[0-9.]+\s*\u00b0?\s*C\b/, '').replace(/\s*@\s*[0-9]{1,2}:[0-9]{2}(:[0-9]{2})?/, '').trim() + ' @ ' + stime;
+  if (tb.textContent !== tt) tb.textContent = tt; }
+var pw = doc.defaultView; if (pw && !pw.__clTemp && typeof pw.xhttpApiInit === 'function') { pw.__clTemp = pw.setInterval(function () { try { pw.xhttpApiInit('f=getCpuTemp'); } catch (e) {} }, 10000); }
+var E = window.__clEcho;
+if (!E) {
+  E = window.__clEcho = { map: {}, asked: {}, busy: false };
+  try { E.map = JSON.parse(localStorage.getItem('cl-echo') || '{}') || {}; } catch (e) {}
+}
+var known = {};
+if (data && data.sessions) for (var j = 0; j < data.sessions.length; j++) { var x = data.sessions[j]; if (x.call && /^3[0-9]{6}$/.test(String(x.node))) known[String(x.node)] = String(x.call).trim(); }
+// A callsign at the start of a name cell opens its QRZ page (same address Connect Lookup uses); -L / -R style endings are dropped for the address. A link the cell already had is replaced.
+function linkCall(cell) {
+  if (cell.querySelector('a.cl-qrz')) return;
+  var kids = cell.children.length;
+  if (kids > 1 || (kids === 1 && cell.children[0].tagName !== 'A')) return;
+  var txt = cell.textContent;
+  var m = txt.match(/^(\s*)([A-Za-z0-9]{1,3}[0-9][A-Za-z]{1,4}(?:\/[A-Za-z0-9]+)?(?:-[A-Za-z0-9]{1,3})?)(?=[\s,;:]|$)/);
+  if (!m) return;
+  var a = doc.createElement('a');
+  a.className = 'cl-qrz';
+  a.href = 'https://www.qrz.com/db/' + encodeURIComponent(m[2].split('-')[0].toUpperCase());
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = m[2];
+  a.addEventListener('click', function (e) { e.stopPropagation(); });
+  a.addEventListener('dblclick', function (e) { e.stopPropagation(); });
+  var rest = txt.slice(m[0].length);
+  cell.textContent = '';
+  if (m[1]) cell.appendChild(doc.createTextNode(m[1]));
+  cell.appendChild(a);
+  if (rest) cell.appendChild(doc.createTextNode(rest));
+}
+var need = [];
+var tables = doc.querySelectorAll('table.grid, table.favs');
+for (var t = 0; t < tables.length; t++) {
+  var tb = tables[t];
+  var isGrid = tb.classList.contains('grid');
+  var hr = tb.querySelectorAll('thead tr'); hr = hr.length ? hr[hr.length - 1].cells : [];
+  var col = -1;
+  for (var h = 0; h < hr.length; h++) if (new RegExp(isGrid ? '^node info$' : '^name$', 'i').test((hr[h].textContent || '').trim())) col = h;
+  if (col < 0) continue;
+  var rows = tb.querySelectorAll('tbody tr');
+  for (var i = 0; i < rows.length; i++) {
+    var nc = rows[i].querySelector('td.nodeNum') || rows[i].cells[0];
+    var cell = rows[i].cells[col];
+    if (!cell) continue;
+    try { linkCall(cell); } catch (e) {}
+    if (!nc) continue;
+    var m = (nc.textContent || '').match(/\b(3[0-9]{6})\b/);
+    if (!m) continue;
+    try { var qa = cell.querySelector('a.cl-qrz'); if (qa && !qa.classList.contains('cl-echo-call')) qa.classList.add('cl-echo-call'); } catch (e) {}
+    var n = m[1], cur = (cell.textContent || '').replace(/[\s ]+/g, ' ').trim();
+    // the leading 3 is only the connect code: hide it on screen (the text is unchanged, so selecting a row still fills in the full number)
+    if (/^\s*3[0-9]{6}\s*$/.test(nc.textContent || '') && !nc.classList.contains('cl-echo-num')) nc.classList.add('cl-echo-num');
+    var blank = cur === '' || cur === '-' || cur === n || /^EchoLink/i.test(cur);
+    if (!blank) continue;
+    var call = known[n] || E.map[n];
+    if (call) { if (cell.textContent !== call) cell.textContent = call; }
+    else if (!E.asked[n]) need.push(n);
+  }
+}
+if (need.length && !E.busy) {
+  E.busy = true;
+  var ask = need.slice(0, 12);
+  ask.forEach(function (n) { E.asked[n] = 1; });
+  fetch('?echo=' + ask.join(','), { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      for (var k in j) if (/^3[0-9]{6}$/.test(k) && typeof j[k] === 'string') E.map[k] = j[k];
+      try { localStorage.setItem('cl-echo', JSON.stringify(E.map)); } catch (e) {}
+    })
+    .catch(function () { ask.forEach(function (n) { delete E.asked[n]; }); })
+    .then(function () { E.busy = false; });
+}
+CL_EOF_PANEL_JS
+}
+
+emit_panel_words() { cat <<'CL_EOF_PANEL_WORDS'
+# old|new   (shown text only, case does not matter);  a line with a TAB uses the TAB instead of | (for old text that contains a | mark)
+ | 	
+Connection Status|Node Connection
+CL_EOF_PANEL_WORDS
+}
+
+emit_panel_remove() { cat <<'CL_EOF_PANEL_REMOVE'
+# CSS selectors, one per line: these are taken out of the panel page.
+# A check box is replaced by a hidden one that always stays off (the page's own script still reads it).
+# (a line that starts with # is a comment, so write an id as input#name, not #name)
+label[for="autodisc"]
+input#autodisc
+label[for="automondisc"]
+input#automondisc
+CL_EOF_PANEL_REMOVE
+}
+
+emit_fav_entries() { cat <<'CL_EOF_FAVS'
+label[] = "K4JLB --CLOUD--, White Pine,TN 684972"
+cmd[] = "rpt cmd %node% ilink 3 684972"
+label[] = "K4JLB Home, White Pine,TN 684971"
+cmd[] = "rpt cmd %node% ilink 3 684971"
+label[] = "K4JLB Mobile , WHITE PINE, TN. 67270"
+cmd[] = "rpt cmd %node% ilink 3 67270"
+label[] = "KD4HZN 147.315, Rogersville Tennessee 680640"
+cmd[] = "rpt cmd %node% ilink 3 680640"
+label[] = "KD4HZN 224.480, Rogersville Tn. 686590"
+cmd[] = "rpt cmd %node% ilink 3 686590"
+label[] = "KD4HZN No Bob, Rogersville Tn. 686591"
+cmd[] = "rpt cmd %node% ilink 3 686591"
+label[] = "K4JOZ Zebra Water Cooler, Whitesburg,TN 675841"
+cmd[] = "rpt cmd %node% ilink 3 675841"
+label[] = " ,  3494563"
+cmd[] = "rpt cmd %node% ilink 3 3494563"
+label[] = " ,  3510366"
+cmd[] = "rpt cmd %node% ilink 3 3510366"
+CL_EOF_FAVS
+}
+
+# ----------------------------------------------------------------------
+#  Optional right-hand panel (the node's own connect / favorites page, shown beside Connect Lookup)
+# ----------------------------------------------------------------------
+# Finds the web app on this node that provides it, by what it contains (not by name). Prints its web path, e.g. /something/
+find_panel_app() {
+  local d
+  for d in /var/www/html/*/; do
+    d=${d%/}
+    [ "$d" = "$WEB" ] && continue
+    if [ -f "$d/api/index.php" ] && [ -f "$d/js/main.js" ] && [ -f "$d/include/viewUtils.php" ] \
+       && grep -q 'getCpuTemp' "$d/api/index.php" 2>/dev/null; then
+      printf '/%s/\n' "$(basename "$d")"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Default favorites: added once, only when the node has none yet. After that they belong to the person:
+# anything they change or delete is never put back (a marker file remembers that this was done).
+seed_favorites() {
+  local d=$1 mk="$WEB/.favorites-seeded" f c n=0 empty="" new owner
+  if [ -e "$mk" ]; then note "default favorites: handled by an earlier install - left alone"; return 0; fi
+  for f in "$d"/favorites*.ini; do
+    [ -f "$f" ] || continue
+    c=$(grep -c '^[[:space:]]*label\[\]' "$f" 2>/dev/null || true)
+    n=$(( n + ${c:-0} ))
+    [ "${c:-0}" = 0 ] && [ -z "$empty" ] && empty=$f
+  done
+  if [ "$n" -gt 0 ]; then
+    note "default favorites: this node already has favorites - left alone"
+  elif [ -n "$empty" ]; then
+    if [ "$(grep -c '^\[' "$empty")" = 1 ] && grep -q '^\[general\]' "$empty"; then
+      emit_fav_entries >> "$empty" && note "default favorites added to $empty"
+    else
+      note "default favorites: $empty has an unusual layout - left alone"
+    fi
+  elif [ ! -e "$d/favorites.ini" ]; then
+    new="$d/favorites.ini"
+    { printf '; Default favorites from the Connect Lookup installer. Change or delete them freely - they are not put back.\n'
+      printf '; The %%node%% template is replaced with your node number at run time.\n;\n[general]\n;\n'
+      emit_fav_entries; } > "$new" && note "default favorites written to $new"
+  fi
+  if id www-data >/dev/null 2>&1; then
+    for f in "$d"/favorites.ini; do [ -f "$f" ] && chown www-data:www-data "$f" 2>/dev/null && chmod 664 "$f"; done
+  fi
+  : > "$mk"
+}
+
+setup_panel() {
+  put 644 "$WEB/panel.css"        emit_panel_css
+  put 644 "$WEB/panel.js"         emit_panel_js
+  put 644 "$WEB/panel-words.txt"  emit_panel_words
+  put 644 "$WEB/panel-remove.txt" emit_panel_remove
+  note "$WEB/panel.css, panel.js, panel-words.txt, panel-remove.txt"
+  local app
+  app=$(find_panel_app) || app=""
+  if [ -z "$app" ]; then
+    note "the node-connect app was not found on this node - the panel stays off (run this installer again after you install it)"
+    return 0
+  fi
+  if [ -e "$WEB/panel.txt" ]; then
+    note "panel.txt already present - left alone"
+  else
+    printf '%s\n' "$app" > "$WEB/panel.txt" && chmod 644 "$WEB/panel.txt"
+    note "panel available ($app) - tick \"Show the node-connect panel\" at the top of the page"
+  fi
+  seed_favorites "/var/www/html$(printf '%s' "$app" | sed 's:/$::')"
 }
 
 # ----------------------------------------------------------------------
@@ -1054,6 +1474,7 @@ do_install() {
   install -d -m 755 "$WEB" || die "Could not create $WEB"
   put 644 "$WEB/index.php" emit_index
   note "$WEB/index.php"
+  setup_panel
 
   say "[4/6] Background service, daily cleanup and daily version check"
   put 644 "$UNITDIR/connect-lookup-live.service"  emit_unit_live
@@ -1139,9 +1560,12 @@ do_install() {
     say "    until you add a free QRZ.com login:  sudo bash $0 $NODE --qrz"
   fi
   say "  - Your original rpt.conf was saved next to it (rpt.conf.bak-connect-lookup-*)."
-  say "  - Optional: at the top of the page there is a checkbox, \"Outline the stations"
-  say "    behind a link while that link is transmitting\". It is off until you tick it;"
-  say "    each browser remembers its own choice."
+  say "  - Optional: at the top of the page there are two checkboxes, \"Outline the stations"
+  say "    behind a link while that link is transmitting\" and \"Show the node-connect panel"
+  say "    on the right\". Both are off until you tick them; each browser remembers its own choice."
+  say "  - If the node-connect app is installed here, the panel shows it beside this page, and a"
+  say "    few default favorites are added once if you have none. Change or delete them freely;"
+  say "    they are never put back, and updating this installer never touches your favorites."
   say "  - Once a day the node reads one line from GitHub (the newest version number). If a"
   say "    newer version than this one exists, the 'Version' line at the top of the page"
   say "    says so, with a red 'get it on GitHub' link that fades slowly in and out. It only"
@@ -1193,7 +1617,7 @@ do_uninstall() {
   fi
 
   say ""
-  say "Connect Lookup has been removed. Other pages on this node were not touched."
+  say "Connect Lookup has been removed. Other pages on this node, and your favorites, were not touched."
   say "Check:  sudo grep -n conlog $RPT   (no output is correct)"
 }
 
@@ -1235,12 +1659,12 @@ fi
 
 say ""
 say "This will:"
-say "  1. Put the web page in $WEB"
+say "  1. Put the web page in $WEB (with an optional panel beside it if the node-connect app is installed)"
 say "  2. Add six small helper scripts in $CUSTOM"
 say "  3. Add a background service, a daily cleanup job and a daily version check (systemd)"
 say "  4. Add two lines (connpgm and discpgm) to the [$NODE] section of"
 say "     $RPT, after saving a backup copy, and reload app_rpt"
-say "Nothing else is changed. AllScan and your other pages are left alone."
+say "Nothing else is changed. node-connect and your other pages are left alone."
 say ""
 ask "Install Connect Lookup for node $NODE?" || cancelled
 

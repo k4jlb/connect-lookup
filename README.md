@@ -14,6 +14,9 @@ right now, and who connected during the last 24 hours. Built by K4JLB.
   letters above the title
 - An optional checkbox at the top of the page that also outlines, faintly, the
   stations behind that link while it is transmitting (off until you tick it)
+- An optional panel on the right with your node's own connect / disconnect /
+  monitor / favorites page, so you can do all of it on one page (off until you tick
+  its checkbox; only offered if that web app is already installed on your node)
 - A count beside each heading; the page refreshes itself every few seconds
 - A notice when a newer version is published here: once a day the node reads one
   line from this repository (`VERSION`), and if it is newer than the one you run,
@@ -21,8 +24,7 @@ right now, and who connected during the last 24 hours. Built by K4JLB.
   link (to this page) that fades slowly in and out. It only tells you; nothing installs by itself
 
 It installs by typing one thing: **your own node number**. It does not touch
-AllScan, Supermon, Allmon or any other page, and you can remove it completely
-with one command.
+any other page on your node, and you can remove it completely with one command.
 
 ## Install
 
@@ -40,7 +42,7 @@ curl -fLO https://raw.githubusercontent.com/k4jlb/connect-lookup/main/install-co
 ```
 
 Check the download is intact. It should print exactly this:
-`17dbbfeafaf818a131700f752cf492f60a03ac857dd91a8a75bf94803017dd7e`
+`ad0098f5d1ae1a87c1c11c393d1fae6c87e5dd5890d2aadb9dee12bdf88b2599`
 
 ```
 sha256sum install-connect-lookup.sh
@@ -66,10 +68,30 @@ You can read the whole script in any text editor before running it. It
 contains no passwords and nothing that belongs to anyone else's node; your
 node number is the only thing that is filled in.
 
+## The optional panel on the right
+
+If your node already has the web app where you connect, disconnect, monitor and
+keep favorites, the installer finds it (by what it contains) and adds a second
+checkbox at the top of the page:
+
+**[ ] Show the node-connect panel on the right**
+
+- It is **off** until you tick it, and each browser remembers its own choice.
+- The panel shows that app beside Connect Lookup, restyled to match, so you can
+  connect, disconnect, monitor, use DTMF and add, edit or delete favorites without
+  leaving the page. Callsigns in the name columns open their QRZ page in a new tab (EchoLink callsigns are shown in white so they are easy to tell apart). EchoLink favorites show the callsign. The CPU temperature is
+  shown at the top right and refreshes every 10 seconds, in your local time.
+- If that app is not installed, nothing is added and the panel stays off. Install
+  it, then run this installer again.
+- **Default favorites.** If the node has no favorites yet, a few default ones are
+  added once. Change or delete them any way you like: they are never put back, and
+  updating this installer never touches your favorites. Removing Connect Lookup
+  leaves your favorites alone too.
+
 ## The optional outline checkbox
 
-There is nothing to choose when you install. At the top of the page there is a
-checkbox:
+There is nothing to choose when you install. At the top of the page there are two
+checkboxes (both start unticked). The first one:
 
 **[ ] Outline the stations behind a link while that link is transmitting**
 
