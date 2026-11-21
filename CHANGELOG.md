@@ -3,6 +3,19 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-21 (version 1.5.7)
+- Fixed: some callsigns outside the US showed a dash instead of a name. For
+  certain callsigns QRZ keeps the whole name in the first-name field and leaves the
+  last-name field empty, and the lookup threw that answer away. It now uses whatever
+  name QRZ returns, with no stray spaces.
+- A callsign the lookup could not find is normally tried again after a week. Running
+  this installer now clears that list, so names an earlier version missed are looked
+  up again right away. To retry just one callsign without reinstalling, run
+  `sudo sed -i '/^CALLSIGN /d' /var/log/asterisk/node-history/peoplemiss.txt`
+  (put the callsign in place of CALLSIGN).
+- If you already installed 1.5.6, run this installer again. Your password and your
+  Full control / Read-only level are kept.
+
 ## 2026-11-20 (version 1.5.6)
 - Fixed: the Full control / Read-only switch could change the wrong settings file.
   On a node that keeps a backup copy of the app's settings next to the real one in

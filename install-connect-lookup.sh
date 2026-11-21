@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5.6"
+VERSION="1.5.7"
 MARK="connect-lookup-installer-v1"
 ACCESS="panel-access.php"   # the switch's settings and password hash, next to index.php (never published, never contains the plain password)
 CUSTOM=/etc/asterisk/custom
@@ -269,7 +269,7 @@ for n in $( { cat $D/live.txt; cat $D/$(date +%F).log $D/$(date -d yesterday +%F
     x=$(curl -s -m 10 -G --data-urlencode "s=$k" --data-urlencode "callsign=$b" https://xmldata.qrz.com/xml/current/)
     f=$(echo "$x" | grep -oP '(?<=<fname>)[^<]+')
     l=$(echo "$x" | grep -oP '(?<=<name>)[^<]+')
-    [ -n "$l" ] && p="$f $l"
+    p=$(echo "$f $l" | sed 's/^ *//; s/ *$//')
   fi
   if [ -n "$p" ]; then
     echo "$b|$p" >> $D/people.txt
@@ -1848,9 +1848,11 @@ do_install() {
   put 755 "$CUSTOM/live.sh"   emit_live
   put 755 "$CUSTOM/track.sh"  emit_track
   put 755 "$CUSTOM/names.sh"  emit_names
+  rm -f "$LOGDIR/peoplemiss.txt"   # names an earlier version could not find are looked up again
   put 755 "$CUSTOM/topology.php" emit_topology
   put 755 "$CUSTOM/checkver.sh" emit_checkver
   note "$CUSTOM/conlog.sh, live.sh, track.sh, names.sh, topology.php, checkver.sh"
+  note "names an earlier version could not find are looked up again"
   [ "$QRZ" = 1 ] && setup_qrz
 
   say "[3/6] Web page"
