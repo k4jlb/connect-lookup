@@ -287,5 +287,5 @@ VERIFY YOUR COPY (optional)
   On the node:
     sha256sum install-connect-lookup.sh
   should print:
-    fdab707db4bf810bdda1ea49391d2cfe647f79b5805b858f271730438b0b2350
+    c97f2c3cf58aa492d17fb2ead60e6f2120d7ca0c20971c6d510f3204af10ffc3
   You can also read the whole script in any text editor before running it.
