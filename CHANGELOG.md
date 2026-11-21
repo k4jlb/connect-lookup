@@ -3,6 +3,15 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-20 (version 1.5.6)
+- Fixed: the Full control / Read-only switch could change the wrong settings file.
+  On a node that keeps a backup copy of the app's settings next to the real one in
+  `/etc/allscan/`, the switch changed the backup, so the node-connect app kept its
+  old level. The installer now uses the app's own settings file
+  (`/etc/allscan/<app folder name>.db`, for example `allscan.db`) and never picks a
+  backup copy. If you already installed 1.5.5, run this installer again: it points
+  the switch at the right file and keeps your password.
+
 ## 2026-11-20 (version 1.5.5)
 - New: a **Full control / Read-only switch** at the very top of the panel, right
   beside the word node-connect. Full control lets visitors connect, disconnect,

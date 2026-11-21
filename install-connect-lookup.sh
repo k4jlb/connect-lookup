@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5.5"
+VERSION="1.5.6"
 MARK="connect-lookup-installer-v1"
 ACCESS="panel-access.php"   # the switch's settings and password hash, next to index.php (never published, never contains the plain password)
 CUSTOM=/etc/asterisk/custom
@@ -1526,8 +1526,13 @@ panel_access_info() {
   PA_FULL=$(sed -n "s/^define('PERMISSION_FULL', *\([0-9][0-9]*\)).*/\1/p" "$d/include/UserModel.php" 2>/dev/null | head -n1)
   PA_RO=$(sed -n "s/^define('PERMISSION_READ_ONLY', *\([0-9][0-9]*\)).*/\1/p" "$d/include/UserModel.php" 2>/dev/null | head -n1)
   [ -n "$PA_ID" ] && [ -n "$PA_FULL" ] || return 1
+  # the app keeps its settings in /etc/allscan/<its folder name>.db (for /var/www/html/allscan that is /etc/allscan/allscan.db)
+  f="/etc/allscan/$(basename "$d").db"
+  if [ -f "$f" ] && grep -aq 'CREATE TABLE cfg' "$f" 2>/dev/null && grep -aq 'CREATE TABLE user' "$f" 2>/dev/null; then PA_DB=$f; return 0; fi
+  # otherwise look for a settings file by what it contains, but never a backup copy
   for f in /etc/*/*.db /var/lib/*/*.db "$d"/*.db; do
     [ -f "$f" ] || continue
+    case "$(basename "$f")" in *bak*|*backup*|*old*|*orig*|*copy*|*before*|*save*|*tmp*|*~) continue ;; esac
     if grep -aq 'CREATE TABLE cfg' "$f" 2>/dev/null && grep -aq 'CREATE TABLE user' "$f" 2>/dev/null; then PA_DB=$f; break; fi
   done
   [ -n "$PA_DB" ]
