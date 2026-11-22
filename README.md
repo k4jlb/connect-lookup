@@ -42,7 +42,7 @@ curl -fLO https://raw.githubusercontent.com/k4jlb/connect-lookup/main/install-co
 ```
 
 Check the download is intact. It should print exactly this:
-`516475221749643552f8438d38d991139bf98ce0ceb6e1fca07dc786ca09d6c4`
+`8f914ba39d3e8a56d9245c381d7dcc5fbfefbc41f401cb37e5cab61bb513cba2`
 
 ```
 sha256sum install-connect-lookup.sh

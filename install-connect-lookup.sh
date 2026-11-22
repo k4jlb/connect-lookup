@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5.8"
+VERSION="1.5.9"
 MARK="connect-lookup-installer-v1"
 ACCESS="panel-access.php"   # the switch's settings and password hash, next to index.php (never published, never contains the plain password)
 CUSTOM=/etc/asterisk/custom
@@ -110,14 +110,14 @@ IVL=120
 declare -A PREV MISS WASDIR CUR BACK LE
 . /etc/asterisk/custom/track.sh
 LASTN=0
-# keyed.txt: which directly linked stations are transmitting right now (checked twice a second; used by the page's red outline)
+# keyed.txt: which directly linked stations are transmitting right now (checked about five times a second; used by the page's red outline)
 ( while true; do
     k=$(/usr/sbin/asterisk -rx "rpt show variables @NODE@" 2>/dev/null | grep -m1 'RPT_ALINKS=')
     if [ -n "$k" ]; then
       echo "${k#*=}" | tr ',' '\n' | tail -n +2 | grep -E '[TR]K$' | sed 's/[TR]K$//' > $D/keyed.tmp
       mv -f $D/keyed.tmp $D/keyed.txt
     fi
-    sleep 0.5
+    sleep 0.2
   done ) &
 while true; do
   # OKLIVE=1 only when Asterisk really answered (the answer has its CONNECTED NODES heading, even if it says <NONE>)
@@ -1142,8 +1142,10 @@ function tick(){
     els[i].textContent = dur(nowT - Number(els[i].getAttribute('data-start')));
   }
 }
-var kt = {};
-function noteKeyed(a){ var t = Date.now(); for (var j = 0; j < a.length; j++) kt[a[j]] = t; }
+var kt = {}, kfeed = 0;
+function noteKeyed(a){ if (Date.now() - kfeed < 1500) return; var t = Date.now(); for (var j = 0; j < a.length; j++) kt[a[j]] = t; }
+// while the node-connect panel is loaded it reports who is keyed, live; the page then follows that exactly (on and off together) instead of its own slower check
+function panelKeyed(a){ var t = Date.now(); kfeed = t; kt = {}; for (var j = 0; j < a.length; j++) kt[a[j]] = t; applyKeyed(); }
 function applyKeyed(){ var t = Date.now(); var rows = document.querySelectorAll('#nowBody tr[data-node]'); for (var i = 0; i < rows.length; i++) { var s = kt[rows[i].getAttribute('data-node')]; var on = s !== undefined && t - s < 2200; rows[i].classList.toggle('keyed', on); var m = (rows[i].getAttribute('data-via') || '').match(/^via (\S+)/); var d = m ? kt[m[1]] : undefined; rows[i].classList.toggle('behind', BEHIND && !on && d !== undefined && t - d < 2200); } }
 function pollKeyed(){ fetch('?keyed=1', {cache:'no-store'}).then(function(r){ return r.json(); }).then(function(j){ if (data) { data.keyed = j.keyed; } noteKeyed(j.keyed || []); applyKeyed(); }).catch(function(){}); }
 function poll(){
@@ -1262,8 +1264,8 @@ function poll(){
 poll();
 setInterval(poll, 3000);
 setInterval(tick, 1000);
-setInterval(pollKeyed, 500);
-setInterval(applyKeyed, 250);
+setInterval(pollKeyed, 250);
+setInterval(applyKeyed, 100);
 </script>
 </body>
 </html>
@@ -1333,9 +1335,18 @@ header{display:flex !important;align-items:center !important;flex-wrap:wrap !imp
 header small{display:none !important}
 a.cl-echo-call,a.cl-echo-call:visited{color:#ffffff !important}
 @media (max-width:600px){table.grid,table.favs,#nodeForm{width:100% !important;margin-left:0 !important;margin-right:0 !important}table.grid,table.favs{font-size:13px !important}.twrap{overflow-x:auto !important}}
-/* the app paints keyed rows plain maroon and the favorites number column pure red: both toned down to match the page */
-table.grid tr.tColor td,table.grid tr.rColor td,table.grid tr.rColor td a{background-color:#3b1616 !important}
-table.favs tbody tr td:first-child{filter:saturate(.45) brightness(.8)}
+/* the app paints keyed rows plain maroon and the favorites number column pure red: both use the same red as the Connect Lookup page (faint maroon fill, thin red outline) */
+table.grid tr.tColor td,table.grid tr.rColor td,table.grid tr.rColor td a{background-color:#2a1212 !important}
+table.grid tr.tColor td,table.grid tr.rColor td{color:#e6e6e6 !important;box-shadow:inset 0 2px 0 #a63636,inset 0 -2px 0 #a63636 !important}
+table.grid tr.tColor td:first-child,table.grid tr.rColor td:first-child{box-shadow:inset 2px 0 0 #a63636,inset 0 2px 0 #a63636,inset 0 -2px 0 #a63636 !important}
+table.grid tr.tColor td:last-child,table.grid tr.rColor td:last-child{box-shadow:inset -2px 0 0 #a63636,inset 0 2px 0 #a63636,inset 0 -2px 0 #a63636 !important}
+/* favorites number column (0, 1, 2 ...): the app fades it green/red with activity; here it fades between the page's faint red (#2a1212) and a slightly brighter red, with the thin red outline while live (the panel script below sets the color) */
+table.favs td.cl-fl{background-image:linear-gradient(#2a1212,#2a1212) !important}
+table.favs td.cl-fk{background-image:linear-gradient(var(--clbg,#2a1212),var(--clbg,#2a1212)) !important}
+table.favs td.cl-fo{box-shadow:inset 0 0 0 2px #a63636 !important}
+/* node numbers (Favorites list and Node Connection table): the same green as the So far times on the page (#5fe08a); a linked favorite's lit cell uses a dark fill of that same green, fading with the app's own fade */
+td.nodeNum,td.nodeNum a{color:#5fe08a !important}
+table.favs td.cl-gn{background-image:linear-gradient(var(--clgn,#14402a),var(--clgn,#14402a)) !important}
 CL_EOF_PANEL_CSS
 }
 
@@ -1434,6 +1445,61 @@ if (need.length && !E.busy) {
     .catch(function () { ask.forEach(function (n) { delete E.asked[n]; }); })
     .then(function () { E.busy = false; });
 }
+// Favorites number column: the app paints it green when linked and red (fading with activity) when keyed; read that color and mark the cell, so the panel CSS can show the page's reds instead
+(function () {
+  var w = doc.defaultView, cells = doc.querySelectorAll('table.favs tbody tr td:first-child');
+  for (var q = 0; q < cells.length; q++) {
+    var c = cells[q], st = '', col = '', live = false;
+    try {
+      var mm = (w.getComputedStyle(c).backgroundColor || '').match(/rgba?\(([^)]+)\)/);
+      if (mm) {
+        var pp = mm[1].split(/[ ,\/]+/).map(Number), al = pp.length > 3 ? pp[3] : 1;
+        if (al > 0.05) {
+          if (pp[0] > pp[1] + 40) {
+            st = 'k';
+            var tt = Math.max(0, Math.min(1, (pp[0] * al - 76) / 72));   // the app's red runs from 15% to 29% lightness (red value about 76 to 148)
+            col = 'rgb(' + Math.round(42 + tt * 65) + ',' + Math.round(18 + tt * 14) + ',' + Math.round(18 + tt * 14) + ')';
+            live = tt > 0.85;
+          } else if (pp[1] > pp[0] + 10) st = 'l';
+        }
+      }
+    } catch (e) {}
+    if (c.classList.contains('cl-fk') !== (st === 'k')) c.classList.toggle('cl-fk', st === 'k');
+    if (c.classList.contains('cl-fl') !== (st === 'l')) c.classList.toggle('cl-fl', st === 'l');
+    if (c.classList.contains('cl-fo') !== live) c.classList.toggle('cl-fo', live);
+    if (col && c.style.getPropertyValue('--clbg') !== col) c.style.setProperty('--clbg', col);
+  }
+  // Favorites Node column: the app lights a linked favorite's node number green; use a dark fill of the page's green (#5fe08a), fading the same way
+  var nc2 = doc.querySelectorAll('table.favs tbody tr td.nodeNum');
+  for (var z = 0; z < nc2.length; z++) {
+    var d = nc2[z], gcol = '';
+    try {
+      var m2 = (w.getComputedStyle(d).backgroundColor || '').match(/rgba?\(([^)]+)\)/);
+      if (m2) {
+        var p2 = m2[1].split(/[ ,\/]+/).map(Number), a2 = p2.length > 3 ? p2[3] : 1;
+        if (a2 > 0.05 && p2[1] > p2[0] + 10) {
+          var t2 = Math.max(0, Math.min(1, (p2[1] * a2 - 30) / 90));
+          gcol = 'rgb(' + Math.round(16 + t2 * 14) + ',' + Math.round(40 + t2 * 52) + ',' + Math.round(26 + t2 * 30) + ')';
+        }
+      }
+    } catch (e) {}
+    if (d.classList.contains('cl-gn') !== (gcol !== '')) d.classList.toggle('cl-gn', gcol !== '');
+    if (gcol && d.style.getPropertyValue('--clgn') !== gcol) d.style.setProperty('--clgn', gcol);
+  }
+})();
+// The app's Node Connection table learns who is transmitting the moment it happens; hand its keyed rows to the page's red outline, so both sides switch on and off together.
+// A keyed link row (red) counts, and so does this node's own PTT row (its transmitter is keyed, hang time included): then every linked station is being sent to.
+try {
+  if (typeof window.panelKeyed === 'function' && doc.querySelector('table.grid')) {
+    var gr = doc.querySelectorAll('table.grid tbody tr'), ka = [], own = !!doc.querySelector('table.grid tbody tr.tColor');
+    for (var x = 0; x < gr.length; x++) {
+      var kc = gr[x].cells[0], km = kc ? (kc.textContent || '').match(/^\s*([0-9]{3,7})\s*$/) : null;
+      if (!km || gr[x].classList.contains('tColor')) continue;
+      if (own || gr[x].classList.contains('rColor')) ka.push(km[1]);
+    }
+    window.panelKeyed(ka);
+  }
+} catch (e) {}
 CL_EOF_PANEL_JS
 }
 

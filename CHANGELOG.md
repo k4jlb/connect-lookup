@@ -3,6 +3,27 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-22 (version 1.5.9)
+- Changed: in the node-connect panel, the red for a keyed (transmitting) station now
+  matches the Connect Lookup page: the same faint maroon fill with the same thin red
+  outline, in the Node Connection table.
+- Changed: the number column of the panel's Favorites list (0, 1, 2 ...) now uses the
+  page's reds. It still fades with activity, but between the page's faint red and a
+  slightly brighter red, with the thin red outline while that favorite is transmitting
+  (it used to be green and plain red).
+- Changed: node numbers in the panel (Favorites list and Node Connection table) use the
+  same green as the "So far" times on the page, and a linked favorite's lit Node cell
+  is a dark fill of that same green (it still fades with activity).
+- Changed: the red "transmitting" outline on the Connect Lookup page now shows up
+  sooner. The node checks for a keyed station about five times a second instead of
+  twice, the page asks and redraws more often, and when the node-connect panel is
+  loaded the page follows the keyed station straight from the panel's own Node
+  Connection table (a keyed link, or this node's own PTT row, hang time included),
+  so both sides switch on and off at the same moment (if the panel is not loaded,
+  the page uses its own check as before).
+- If you already installed 1.5.8, run this installer again. Your password and your
+  Full control / Read-only level are kept.
+
 ## 2026-11-21 (version 1.5.8)
 - New: the page now fits a phone. On a screen narrower than about 700 pixels
   (an iPhone held upright, for example) each row of the two tables becomes a small
