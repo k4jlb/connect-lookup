@@ -3,6 +3,14 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-22 (version 1.5.10)
+- Fixed: on a node with several direct links, keying lit every direct link on the
+  page whenever the panel showed "PTT Keyed", even when only one link was actually
+  talking (the others were just being repeated to). Now, when a link is the one
+  talking, only that link is outlined (and, with the top box ticked, the stations
+  behind it). When nobody on a link is talking (the local microphone), every linked
+  station is still outlined, as before.
+
 ## 2026-11-22 (version 1.5.9)
 - Changed: in the node-connect panel, the red for a keyed (transmitting) station now
   matches the Connect Lookup page: the same faint maroon fill with the same thin red

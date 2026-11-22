@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5.9"
+VERSION="1.5.10"
 MARK="connect-lookup-installer-v1"
 ACCESS="panel-access.php"   # the switch's settings and password hash, next to index.php (never published, never contains the plain password)
 CUSTOM=/etc/asterisk/custom
@@ -1488,15 +1488,19 @@ if (need.length && !E.busy) {
   }
 })();
 // The app's Node Connection table learns who is transmitting the moment it happens; hand its keyed rows to the page's red outline, so both sides switch on and off together.
-// A keyed link row (red) counts, and so does this node's own PTT row (its transmitter is keyed, hang time included): then every linked station is being sent to.
+// A keyed link row (red) counts. This node's own PTT row (its transmitter is keyed, hang time included) lights the stations being sent to: if a link is the one talking, only that link stays lit (the rest of the links are just being repeated to); if nobody on a link is talking (the local microphone), every linked station is lit.
 try {
   if (typeof window.panelKeyed === 'function' && doc.querySelector('table.grid')) {
-    var gr = doc.querySelectorAll('table.grid tbody tr'), ka = [], own = !!doc.querySelector('table.grid tbody tr.tColor');
+    var gr = doc.querySelectorAll('table.grid tbody tr'), ka = [], all = [], own = !!doc.querySelector('table.grid tbody tr.tColor');
     for (var x = 0; x < gr.length; x++) {
       var kc = gr[x].cells[0], km = kc ? (kc.textContent || '').match(/^\s*([0-9]{3,7})\s*$/) : null;
       if (!km || gr[x].classList.contains('tColor')) continue;
-      if (own || gr[x].classList.contains('rColor')) ka.push(km[1]);
+      all.push(km[1]);
+      if (gr[x].classList.contains('rColor')) ka.push(km[1]);
     }
+    if (!own) { window.clSrc = null; }
+    else if (ka.length) { window.clSrc = ka.slice(); }
+    else { ka = (window.clSrc && window.clSrc.length) ? window.clSrc.slice() : all; }
     window.panelKeyed(ka);
   }
 } catch (e) {}
