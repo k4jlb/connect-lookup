@@ -7,6 +7,13 @@ right now, and who connected during the last 24 hours:
 
   - node, callsign (click it to open the QRZ page), and the operator's name
   - "Connected through": Direct, or which node the station comes through
+  - a faded yellow (M) beside the node number marks a station that is only
+    listening (monitor): a link your node is only listening to, a station
+    only listening to your node, or a station further out only listening to
+    the node it comes through. Stations listening to your node or further
+    out are found through their own report to the stats feed, so the (M)
+    can take a few minutes to show, and stations that do not report there
+    (EchoLink, web transceivers) never get it
   - description / location, time connected, and how long
   - EchoLink stations in light blue; web-transceiver callsigns work too and
     are labelled "Web Transceiver"
@@ -287,5 +294,5 @@ VERIFY YOUR COPY (optional)
   On the node:
     sha256sum install-connect-lookup.sh
   should print:
-    8f914ba39d3e8a56d9245c381d7dcc5fbfefbc41f401cb37e5cab61bb513cba2
+    c998d862e39399b2c6d7500128368ac07aa0ed3710407a6be5a8666bb917677b
   You can also read the whole script in any text editor before running it.
