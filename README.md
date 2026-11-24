@@ -5,6 +5,9 @@ right now, and who connected during the last 24 hours. Built by K4JLB.
 
 - Node, callsign (click it to open the QRZ page) and the operator's name
 - "Connected through": Direct, or which node the station comes through
+- A faded yellow (M) beside the node number marks a station that is only listening
+  (monitor): a link your node is only listening to, a station only listening to your
+  node, or a station further out only listening to the node it comes through
 - Description and location, time connected, and how long
 - EchoLink stations in light blue; Web Transceiver callsigns work too
 - A red box around a station's row while it is transmitting (direct links)
@@ -42,7 +45,7 @@ curl -fLO https://raw.githubusercontent.com/k4jlb/connect-lookup/main/install-co
 ```
 
 Check the download is intact. It should print exactly this:
-`32bc6b21e362cf16555be25a1c7b7546e6be744d1dfeacb3fba478850f989194`
+`c998d862e39399b2c6d7500128368ac07aa0ed3710407a6be5a8666bb917677b`
 
 ```
 sha256sum install-connect-lookup.sh

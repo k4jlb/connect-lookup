@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5.10"
+VERSION="1.5.13"
 MARK="connect-lookup-installer-v1"
 ACCESS="panel-access.php"   # the switch's settings and password hash, next to index.php (never published, never contains the plain password)
 CUSTOM=/etc/asterisk/custom
@@ -53,7 +53,11 @@ die() {
   exit 1
 }
 
-cancelled() { say "Cancelled. Nothing was changed."; exit 0; }
+cancelled() {
+  if [ "$CHANGED" = 1 ] && [ "$MODE" != uninstall ]; then say "Cancelled. Only the missing curl / php-cli package was installed; nothing else was changed."
+  else say "Cancelled. Nothing was changed."; fi
+  exit 0
+}
 
 ask() {
   [ "$YES" = 1 ] && return 0
@@ -110,11 +114,14 @@ IVL=120
 declare -A PREV MISS WASDIR CUR BACK LE
 . /etc/asterisk/custom/track.sh
 LASTN=0
+LASTP=0
 # keyed.txt: which directly linked stations are transmitting right now (checked about five times a second; used by the page's red outline)
+# plus a line RX while this node's own receiver is keyed (someone talking into this node's own radio or microphone)
 ( while true; do
-    k=$(/usr/sbin/asterisk -rx "rpt show variables @NODE@" 2>/dev/null | grep -m1 'RPT_ALINKS=')
+    v=$(/usr/sbin/asterisk -rx "rpt show variables @NODE@" 2>/dev/null)
+    k=$(grep -m1 'RPT_ALINKS=' <<< "$v")
     if [ -n "$k" ]; then
-      echo "${k#*=}" | tr ',' '\n' | tail -n +2 | grep -E '[TR]K$' | sed 's/[TR]K$//' > $D/keyed.tmp
+      { echo "${k#*=}" | tr ',' '\n' | tail -n +2 | grep -E '[TR]K$' | sed 's/[TR]K$//'; grep -q 'RPT_RXKEYED=1' <<< "$v" && echo RX; } > $D/keyed.tmp
       mv -f $D/keyed.tmp $D/keyed.txt
     fi
     sleep 0.2
@@ -127,6 +134,9 @@ while true; do
     OKLIVE=1
     grep -v '\*' <<< "$raw" | tr ',' '\n' | tr -d ' \t' | grep -E '^[TR][0-9A-Za-z-]+$' | cut -c2- | grep -vx @NODE@ | awk '!seen[$0]++' > $D/live.tmp
     mv -f $D/live.tmp $D/live.txt
+    # monitor.txt: stations connected listen-only (shown R, never also T), for the (M) mark beside the node number on the page
+    grep -v '\*' <<< "$raw" | tr ',' '\n' | tr -d ' \t' | grep -E '^[TR][0-9A-Za-z-]+$' | grep -vx '[TR]@NODE@' | awk '{m=substr($0,1,1); n=substr($0,2); if (m=="T") t[n]=1; else r[n]=1} END {for (n in r) if (!(n in t)) print n}' > $D/monitor.tmp
+    mv -f $D/monitor.tmp $D/monitor.txt
   fi
   now=$(date +%s)
   OLD=()
@@ -143,6 +153,11 @@ while true; do
   done > $D/direct.tmp
   while read -r n t; do grep -qx "$n $t" $D/direct-starts.txt 2>/dev/null || echo "$n $t" >> $D/direct-starts.txt; done < $D/direct.tmp
   if [ "$LST" != FAIL ]; then mv -f $D/direct.tmp $D/direct.txt; else touch $D/direct.txt; OKLIVE=0; fi
+  # a listen-only link (local monitor) is left out of "rpt nodes" by Asterisk but is in lstats: add every fully connected link from lstats to the live list
+  if [ "$OKLIVE" = 1 ]; then
+    lm=$(grep -E " (IN|OUT) .*ESTABLISHED" <<< "$LST" | awk '{print $1}' | grep -E '^[0-9A-Za-z-]+$' | grep -vx @NODE@ | grep -vxF -f $D/live.txt)
+    if [ -n "$lm" ]; then { cat $D/live.txt; echo "$lm"; } > $D/live.tmp && mv -f $D/live.tmp $D/live.txt; echo "$lm" >> $D/monitor.txt; fi
+  fi
   if [ $((now - LAST)) -ge 60 ]; then
     LAST=$now
     ( /usr/bin/flock -n 9 || exit 0
@@ -165,6 +180,7 @@ while true; do
       fi
     done ) 9>$D/el.lock </dev/null >/dev/null 2>&1 &
   fi
+  if [ $((now - LASTP)) -ge 3600 ] && [ -f $D/direct-starts.txt ]; then LASTP=$now; awk -v c=$((now - 259200)) '$2 >= c' $D/direct-starts.txt > $D/direct-starts.tmp && mv -f $D/direct-starts.tmp $D/direct-starts.txt; fi
   if [ $((now - LASTN)) -ge 60 ]; then LASTN=$now; /usr/bin/flock -n $D/names.lock /etc/asterisk/custom/names.sh >/dev/null 2>&1 & fi
   track
   if [ "${NEWC:-0}" = 1 ]; then NEWC=0; LASTSCAN=0; LAST=0; /usr/bin/flock $D/names.lock /etc/asterisk/custom/names.sh >/dev/null 2>&1 & fi
@@ -249,6 +265,8 @@ emit_names() { cat <<'CL_EOF_NAMES'
 # connect-lookup-installer-v1
 D=/var/log/asterisk/node-history
 now=$(date +%s)
+# a value made safe to put between double quotes in a curl config (backslash and double quote escaped)
+cq() { local s=${1//\\/\\\\}; printf '%s' "${s//\"/\\\"}"; }
 for n in $( { cat $D/live.txt; cat $D/$(date +%F).log $D/$(date -d yesterday +%F).log 2>/dev/null | awk '{print $5}'; } | sort -u ); do
   c=$(grep -m1 "^$n|" /var/lib/asterisk/astdb.txt | cut -d"|" -f2)
   [ -z "$c" ] && c=$(grep -m1 "^${n#3}|" $D/elnames.txt 2>/dev/null | cut -d"|" -f2)
@@ -265,7 +283,8 @@ for n in $( { cat $D/live.txt; cat $D/$(date +%F).log $D/$(date -d yesterday +%F
   fi
   if [ -z "$p" ] && [ -r /etc/asterisk/custom/qrz.conf ]; then
     . /etc/asterisk/custom/qrz.conf
-    k=$(curl -s -m 10 -G --data-urlencode "username=$QU" --data-urlencode "password=$QP" --data-urlencode "agent=connectlookup" https://xmldata.qrz.com/xml/current/ | grep -oP '(?<=<Key>)[^<]+')
+    # the login goes to curl through its standard input, not its command line, so the password never shows in the list of running programs
+    k=$(printf 'data-urlencode = "username=%s"\ndata-urlencode = "password=%s"\ndata-urlencode = "agent=connectlookup"\n' "$(cq "$QU")" "$(cq "$QP")" | curl -s -m 10 -G -K - https://xmldata.qrz.com/xml/current/ | grep -oP '(?<=<Key>)[^<]+')
     x=$(curl -s -m 10 -G --data-urlencode "s=$k" --data-urlencode "callsign=$b" https://xmldata.qrz.com/xml/current/)
     f=$(echo "$x" | grep -oP '(?<=<fname>)[^<]+')
     l=$(echo "$x" | grep -oP '(?<=<name>)[^<]+')
@@ -382,7 +401,9 @@ function get_stats(string $node): ?array {
     }
     $links = [];
     foreach (($data['links'] ?? []) as $l) $links[] = trim((string)$l);
-    $c = ['ts' => time(), 'ok' => true, 'entries' => $entries, 'links' => $links];
+    // each link with its mode letter as that node reports it (T = full, R = listen-only), and when it reported
+    $modes = is_string($data['nodes'] ?? null) ? trim($data['nodes']) : '';
+    $c = ['ts' => time(), 'ok' => true, 'entries' => $entries, 'links' => $links, 'modes' => $modes, 'posted' => (int)($data['time'] ?? 0)];
     @file_put_contents($cf, json_encode($c));
     return $c;
 }
@@ -412,6 +433,23 @@ while ($queue && count($rows) < count($wanted)) {
     }
 }
 
+// stations that are only listening (monitor) to the node they connect to: that station's own report lists its
+// link as R<that node>. The node being listened to shows every incoming link as a full link, so this is the only
+// way to tell. Direct links (listening to us) are checked first, then stations further out (listening to the node
+// they come through). Reports older than 15 minutes are not used.
+$monitoring = [];
+$listenTo = [];
+foreach (array_keys($direct) as $d) $listenTo[(string)$d] = $LOCAL;
+foreach ($rows as $n => $r) { if (!isset($listenTo[(string)$n]) && (string)($r['parent_node'] ?? '') !== '') $listenTo[(string)$n] = (string)$r['parent_node']; }
+foreach ($listenTo as $d => $to) {
+    $d = (string)$d;
+    if (!ctype_digit($d)) continue;
+    $s = get_stats($d);
+    if ($s === null || abs(time() - (int)($s['posted'] ?? 0)) > 900) continue;
+    $m = array_map('trim', explode(',', (string)($s['modes'] ?? '')));
+    if (in_array('R' . $to, $m, true) && !in_array('T' . $to, $m, true)) $monitoring[] = $d;
+}
+
 // keep the previous answer for anything we could not look up this time
 $unresolved = [];
 foreach (array_keys($wanted) as $n) {
@@ -427,6 +465,7 @@ $out = [
     'display_nodes' => array_values($rows),
     'unresolved' => $unresolved,
     'seen_at' => $seenAt,
+    'monitoring' => $monitoring,
 ];
 $tmp = "$OUT.tmp";
 if (@file_put_contents($tmp, json_encode($out, JSON_UNESCAPED_SLASHES)) !== false) {
@@ -600,16 +639,23 @@ function echo_lookup($csv) {
     $cf = sys_get_temp_dir() . '/connect-lookup-echo.json';
     $cache = is_readable($cf) ? (json_decode((string)@file_get_contents($cf), true) ?: []) : [];
     $tries = 0; $dirty = false;
+    // web lookups made for visitors are limited to 30 an hour in all, so nobody can use the page to flood EchoLink from this node
+    $web = array_values(array_filter((array)($cache['_w'] ?? []), fn($t) => is_int($t) && $t > time() - 3600));
     foreach (array_keys($nodes) as $n) {
         $c = trim((string)($em[$n]['callsign'] ?? ''));
         if ($c === '') {
             $k = $cache[$n] ?? null;
             if (is_array($k) && time() - (int)($k['t'] ?? 0) < ($k['c'] !== '' ? 86400 : 3600)) $c = (string)$k['c'];
-            elseif ($tries < 3) { $tries++; $c = echolink_web((int)substr($n, 1)); $cache[$n] = ['c' => $c, 't' => time()]; $dirty = true; }
+            elseif ($tries < 3 && count($web) < 30) { $tries++; $web[] = time(); $c = echolink_web((int)substr($n, 1)); $cache[$n] = ['c' => $c, 't' => time()]; $dirty = true; }
         }
         if ($c !== '') $out[$n] = $c;
     }
-    if ($dirty) @file_put_contents($cf, json_encode($cache), LOCK_EX);
+    if ($dirty) {
+        // answers older than a week are dropped, so the saved list does not grow forever
+        foreach ($cache as $k => $v) { if ($k !== '_w' && (!is_array($v) || time() - (int)($v['t'] ?? 0) > 604800)) unset($cache[$k]); }
+        $cache['_w'] = $web;
+        @file_put_contents($cf, json_encode($cache), LOCK_EX);
+    }
     return $out;
 }
 function panel_path() {
@@ -692,6 +738,21 @@ function add_via($r) {
     }
     $pp = []; foreach ([LOGDIR . "/people.txt", "/var/www/html/connect-lookup/people.txt"] as $pf) { if (is_readable($pf)) foreach (file($pf, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $pl) { $pq = explode("|", $pl, 2); if (count($pq) == 2) $pp[strtoupper(trim($pq[0]))] = trim($pq[1]); } }
     foreach ($r["sessions"] as $k => $s) { $bc = strtoupper(preg_replace("/-.*/", "", (string)$s["call"])); $r["sessions"][$k]["name"] = rtrim($pp[$bc] ?? "", " ."); }
+    // the faded yellow (M) beside the node number marks the station that is actually doing the monitoring:
+    // a monitored direct link, or a station further out that is itself connected listen-only. Stations that are only
+    // heard through one of this node's monitored links are listen-only too, but they are not marked (the (M) is on that link).
+    $mdir = [];
+    foreach ($r['sessions'] as $s) { if (!empty($s['mr']) && ($s['via'] ?? '') === 'Direct') $mdir[(string)$s['node']] = true; }
+    foreach ($r['sessions'] as $k => $s) {
+        if (empty($s['mr']) && empty($s['ms'])) continue;
+        unset($r['sessions'][$k]['mr'], $r['sessions'][$k]['ms']);
+        $v = (string)($s['via'] ?? '');
+        if (!empty($s['ms'])) $mon = true;   // its own stats report says it is listen-only
+        elseif ($v === 'Direct') $mon = true;
+        elseif (preg_match('/^via (\S+)/', $v, $vm1)) $mon = !isset($mdir[$vm1[1]]);
+        else $mon = !$mdir;   // route not known yet: marked only when none of this node's own links is monitored
+        if ($mon) $r['sessions'][$k]['mon'] = 1;
+    }
     usort($r['sessions'], fn($a, $b) => ($b['start'] ?? $b['end'] ?? 0) <=> ($a['start'] ?? $a['end'] ?? 0));
     return $r;
 }
@@ -731,6 +792,17 @@ function build() {
             if (!isset($open[$n]) && ($last[$n] ?? 0) < $lt - 5) {
                 $open[$n] = ['node' => $n, 'start' => null, 'end' => null];
             }
+        }
+        // stations Asterisk reports as listen-only (monitor); add_via() decides which of them get the (M)
+        $mf = LOGDIR . '/monitor.txt';
+        if (is_file($mf) && $now - filemtime($mf) < 20) {
+            foreach (file($mf, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) { $t = trim($l); if (isset($open[$t])) $open[$t]['mr'] = 1; }
+        }
+        // stations listening to us: Asterisk shows them as full links, but their own stats report says listen-only (topology.php)
+        $tf = LOGDIR . '/topology.json';
+        if (is_file($tf) && $now - filemtime($tf) < 600) {
+            $tj = json_decode((string)@file_get_contents($tf), true);
+            foreach ((is_array($tj) ? ($tj['monitoring'] ?? []) : []) as $t) { $t = (string)$t; if (isset($open[$t])) $open[$t]['ms'] = 1; }
         }
     }
     foreach ($open as $s) $sess[] = $s;
@@ -791,25 +863,33 @@ function perm_unlocked($c) {
     return hash_equals(perm_token($c, (int)$p[0]), $t);
 }
 function perm_fail_file() { return sys_get_temp_dir() . '/connect-lookup-auth.json'; }
-function perm_wait() {
-    // after 5 wrong passwords in 10 minutes, one more try is allowed only every 5 minutes
-    $f = perm_fail_file();
-    $a = is_readable($f) ? json_decode((string)@file_get_contents($f), true) : [];
-    $now = time();
-    $a = array_values(array_filter(is_array($a) ? $a : [], fn($t) => is_int($t) && $t > $now - 600));
-    if (count($a) < 5) return 0;
-    return max(0, max($a) + 300 - $now);
-}
-function perm_note($ok) {
+// Password tries are counted for each address on its own (a stranger's wrong tries never lock out anyone else):
+// after 5 tries in 10 minutes, one more try is allowed only every 5 minutes. A right password clears that address.
+// perm_try($ip, false) counts the try BEFORE the password is checked, all under one lock, so many tries sent at once cannot slip past;
+// it returns 0 (go ahead) or the seconds to wait. perm_try($ip, true) clears the address after a right password.
+function perm_try($ip, $clear) {
     $fh = @fopen(perm_fail_file(), 'c+');
-    if (!$fh) return;
+    if (!$fh) return 0;
     flock($fh, LOCK_EX);
     $a = json_decode((string)stream_get_contents($fh), true);
-    $now = time();
-    $a = ($ok || !is_array($a)) ? [] : array_values(array_filter($a, fn($t) => is_int($t) && $t > $now - 600));
-    if (!$ok) $a[] = $now;
-    ftruncate($fh, 0); rewind($fh); fwrite($fh, json_encode($a));
+    if (!is_array($a) || isset($a[0])) $a = [];   // empty, damaged, or the older one-list-for-everyone format
+    $now = time(); $out = [];
+    foreach ($a as $k => $v) {
+        if (!is_array($v)) continue;
+        $v = array_values(array_filter($v, fn($t) => is_int($t) && $t > $now - 600));
+        if ($v) $out[(string)$k] = $v;
+    }
+    $w = 0;
+    if ($clear) unset($out[$ip]);
+    else {
+        $mine = $out[$ip] ?? [];
+        if (count($mine) >= 5) $w = max(0, max($mine) + 300 - $now);
+        if ($w === 0) { $mine[] = $now; $out[$ip] = $mine; }
+    }
+    if (count($out) > 500) $out = array_slice($out, -500, null, true);
+    ftruncate($fh, 0); rewind($fh); fwrite($fh, json_encode((object)$out));
     flock($fh, LOCK_UN); fclose($fh);
+    return $w;
 }
 if (isset($_GET['perm'])) {
     header('Content-Type: application/json'); header('Cache-Control: no-store');
@@ -827,17 +907,18 @@ if (isset($_GET['perm'])) {
         } else {
             $ok = ($mode === 'ro') || perm_unlocked($c);   // turning Full control OFF never asks for the password
             if (!$ok) {
-                $w = perm_wait();
+                $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+                $w = perm_try($ip, false);
                 if ($w > 0) {
                     $err = 'Too many wrong passwords. Try again in ' . (int)ceil($w / 60) . ' minute(s).';
                 } else {
                     $pw = (is_array($b) && is_string($b['pw'] ?? null)) ? $b['pw'] : '';
                     if ($pw !== '' && password_verify($pw, (string)$c['hash'])) {
-                        $ok = true; $unl = true; perm_note(true);
+                        $ok = true; $unl = true; perm_try($ip, true);
                         $exp = time() + 28800;
                         setcookie('cl_perm', perm_token($c, $exp), ['expires' => $exp, 'path' => rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/', 'secure' => !empty($_SERVER['HTTPS']), 'httponly' => true, 'samesite' => 'Strict']);
                     } else {
-                        perm_note(false); usleep(700000);
+                        usleep(700000);
                         $err = 'Wrong password.';
                     }
                 }
@@ -915,6 +996,7 @@ a.nl{color:inherit}
 .live{color:#5fe08a;font-weight:600}
 .empty{color:#777}
 .echo td:not(.live), .echo td:not(.live) a { color: #c4e8ff; }
+.mtag{color:#d8c35f;opacity:.75;font-weight:600}
 td{font-variant-numeric:tabular-nums}
 td[data-start]{min-width:7.5em;white-space:nowrap}
 tr.keyed td{background:#2a1212;box-shadow:inset 0 2px 0 #a63636,inset 0 -2px 0 #a63636}
@@ -1098,7 +1180,8 @@ function buildTables(){
   live.forEach(function(s){
     var tr = document.createElement('tr');
     if (/^3[0-9]{6}$/.test(String(s.node))) tr.className = "echo";
-    nodeCell(tr, s);
+    var nt = nodeCell(tr, s);
+    if (s.mon) { var mt = document.createElement('span'); mt.className = 'mtag'; mt.textContent = '(M)'; mt.title = 'Listen-only connection (monitor)'; nt.appendChild(document.createTextNode(' ')); nt.appendChild(mt); }
     cell(tr, callCell(s));
     cell(tr, s.name || "-");
     var vv = s.via || "-"; cell(tr, vv, vv === "Direct" ? "live" : "");
@@ -1488,7 +1571,8 @@ if (need.length && !E.busy) {
   }
 })();
 // The app's Node Connection table learns who is transmitting the moment it happens; hand its keyed rows to the page's red outline, so both sides switch on and off together.
-// A keyed link row (red) counts. This node's own PTT row (its transmitter is keyed, hang time included) lights the stations being sent to: if a link is the one talking, only that link stays lit (the rest of the links are just being repeated to); if nobody on a link is talking (the local microphone), every linked station is lit.
+// A keyed link row (red) counts. This node's own PTT row (its transmitter is keyed, hang time included) lights the stations being sent to: if a link is the one talking, only that link stays lit (the rest of the links are just being repeated to); if nobody on a link is talking and this node's own receiver is keyed (the local microphone or radio: RX in the page's keyed list), every linked station is lit.
+// The node's transmitter also keys by itself for its ID, courtesy tones and announcements, and a moment before a talking link turns red: those never light every station.
 try {
   if (typeof window.panelKeyed === 'function' && doc.querySelector('table.grid')) {
     var gr = doc.querySelectorAll('table.grid tbody tr'), ka = [], all = [], own = !!doc.querySelector('table.grid tbody tr.tColor');
@@ -1500,7 +1584,7 @@ try {
     }
     if (!own) { window.clSrc = null; }
     else if (ka.length) { window.clSrc = ka.slice(); }
-    else { ka = (window.clSrc && window.clSrc.length) ? window.clSrc.slice() : all; }
+    else { ka = (window.clSrc && window.clSrc.length) ? window.clSrc.slice() : ((data && data.keyed && data.keyed.indexOf('RX') >= 0) ? all : []); }
     window.panelKeyed(ka);
   }
 } catch (e) {}
@@ -1582,8 +1666,9 @@ is_untouched_sample() {
 # Default favorites: added once, only when the node has none yet (the app's own untouched sample list does not count as favorites,
 # and that sample file is never touched: the defaults go into favorites.ini, which the app shows first). After that they belong to the person: anything they change or delete is never put back (a marker file remembers that this was done).
 seed_favorites() {
-  local d=$1 mk="$WEB/.favorites-seeded" f c n=0 empty="" new
-  if [ -e "$mk" ]; then note "default favorites: handled by an earlier install - left alone"; return 0; fi
+  local d=$1 mk="$WEB/.favorites-seeded" mk2="$LOGDIR/.favorites-seeded" f c n=0 empty="" new
+  # the second marker is in the log folder, which an uninstall keeps, so a later reinstall never puts the defaults back either
+  if [ -e "$mk" ] || [ -e "$mk2" ]; then : > "$mk"; : 2>/dev/null > "$mk2"; note "default favorites: handled by an earlier install - left alone"; return 0; fi
   for f in "$d"/favorites*.ini; do
     [ -f "$f" ] || continue
     if is_untouched_sample "$f"; then continue; fi
@@ -1608,7 +1693,7 @@ seed_favorites() {
   if id www-data >/dev/null 2>&1; then
     for f in "$d"/favorites.ini; do [ -f "$f" ] && chown www-data:www-data "$f" 2>/dev/null && chmod 664 "$f"; done
   fi
-  : > "$mk"
+  : > "$mk"; : 2>/dev/null > "$mk2"
 }
 
 # The panel's connect / disconnect / monitor / favorites controls only work when the app lets visitors use them.
@@ -1627,11 +1712,14 @@ panel_access_info() {
   PA_FULL=$(sed -n "s/^define('PERMISSION_FULL', *\([0-9][0-9]*\)).*/\1/p" "$d/include/UserModel.php" 2>/dev/null | head -n1)
   PA_RO=$(sed -n "s/^define('PERMISSION_READ_ONLY', *\([0-9][0-9]*\)).*/\1/p" "$d/include/UserModel.php" 2>/dev/null | head -n1)
   [ -n "$PA_ID" ] && [ -n "$PA_FULL" ] || return 1
-  # the app keeps its settings in /etc/allscan/<its folder name>.db (for /var/www/html/allscan that is /etc/allscan/allscan.db)
-  f="/etc/allscan/$(basename "$d").db"
-  if [ -f "$f" ] && grep -aq 'CREATE TABLE cfg' "$f" 2>/dev/null && grep -aq 'CREATE TABLE user' "$f" 2>/dev/null; then PA_DB=$f; return 0; fi
-  # otherwise look for a settings file by what it contains, but never a backup copy
-  for f in /etc/*/*.db /var/lib/*/*.db "$d"/*.db; do
+  # the app keeps its settings in a folder under /etc, in a file named after its web folder: /etc/<the app's own folder>/<web folder name>.db
+  for f in /etc/*/"$(basename "$d").db"; do
+    case "$(basename "$(dirname "$f")")" in *bak*|*backup*|*.old|*-old|*_old|*orig*|*copy*|*before*|*save*|*tmp*|*~) continue ;; esac   # never a backup copy of that folder
+    if [ -f "$f" ] && grep -aq 'CREATE TABLE cfg' "$f" 2>/dev/null && grep -aq 'CREATE TABLE user' "$f" 2>/dev/null; then PA_DB=$f; return 0; fi
+  done
+  # otherwise look only in the app's web folder for a settings file, by what it contains, never a backup copy
+  # (other programs' databases elsewhere in /etc and /var/lib are never searched, so they can never be written to)
+  for f in "$d"/*.db; do
     [ -f "$f" ] || continue
     case "$(basename "$f")" in *bak*|*backup*|*old*|*orig*|*copy*|*before*|*save*|*tmp*|*~) continue ;; esac
     if grep -aq 'CREATE TABLE cfg' "$f" 2>/dev/null && grep -aq 'CREATE TABLE user' "$f" 2>/dev/null; then PA_DB=$f; break; fi
@@ -1639,12 +1727,9 @@ panel_access_info() {
   [ -n "$PA_DB" ]
 }
 
-set_panel_access() {
-  local d=$1 id full db owner out
-  panel_access_info "$d" || { warn "could not read the panel's access setting from the app, or could not find its settings file - the panel may ask for a login"; return 0; }
-  [ -n "$PA_RO" ] || { note "panel access: this version of the app has no read-only level, so its visitor level was left as it is"; return 0; }
-  id=$PA_ID; full=$PA_RO; db=$PA_DB   # $full holds the level that gets written: the app's READ-ONLY level
-  command -v php >/dev/null 2>&1 || { warn "php command line missing - the panel may ask for a login"; return 0; }
+# app_level_write DB ROW LEVEL : writes the app's visitor level as the user who owns its settings file; prints set, same or error
+app_level_write() {
+  local db=$1 id=$2 full=$3 owner
   owner=$(stat -c %U "$db" 2>/dev/null)
   local code='try { $p = new PDO("sqlite:" . $argv[1]); $p->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION); $p->exec("PRAGMA busy_timeout=5000");
     $s = $p->prepare("select val from cfg where cfg_id = ?"); $s->execute([(int)$argv[2]]); $cur = $s->fetchColumn();
@@ -1652,10 +1737,20 @@ set_panel_access() {
     $u = $p->prepare("insert or replace into cfg (cfg_id, val, updated) values (?, ?, ?)"); $u->execute([(int)$argv[2], (string)(int)$argv[3], time()]); echo "set";
   } catch (Throwable $e) { echo "error"; exit(1); }'
   if [ -n "$owner" ] && [ "$owner" != "$(id -un)" ] && command -v runuser >/dev/null 2>&1; then
-    out=$(runuser -u "$owner" -- php -r "$code" "$db" "$id" "$full" 2>/dev/null)
+    runuser -u "$owner" -- php -r "$code" "$db" "$id" "$full" 2>/dev/null
   else
-    out=$(php -r "$code" "$db" "$id" "$full" 2>/dev/null)
+    php -r "$code" "$db" "$id" "$full" 2>/dev/null
   fi
+  return 0
+}
+
+set_panel_access() {
+  local d=$1 id full db out
+  panel_access_info "$d" || { warn "could not read the panel's access setting from the app, or could not find its settings file - the panel may ask for a login"; return 0; }
+  [ -n "$PA_RO" ] || { note "panel access: this version of the app has no read-only level, so its visitor level was left as it is"; return 0; }
+  id=$PA_ID; full=$PA_RO; db=$PA_DB   # $full holds the level that gets written: the app's READ-ONLY level
+  command -v php >/dev/null 2>&1 || { warn "php command line missing - the panel may ask for a login"; return 0; }
+  out=$(app_level_write "$db" "$id" "$full")
   case "$out" in
     set|same) : ;;
     *) warn "could not change the panel's access setting - the panel may ask for a login" ;;
@@ -1700,7 +1795,7 @@ ask_switch_password() {
 # Writes panel-access.php next to index.php: the app's settings file, the row, the two levels and the password hash.
 # $1 = a new hash, or empty to keep the hash already there. Only the hash is ever stored, never the password.
 write_access_file() {
-  local new=$1 f="$WEB/$ACCESS" hash="" asked=0 re='^\$2y\$[0-9]{2}\$[./A-Za-z0-9]{53}$'
+  local new=$1 f="$WEB/$ACCESS" tmp="$WEB/.ht-$ACCESS.tmp" hash="" asked=0 re='^\$2y\$[0-9]{2}\$[./A-Za-z0-9]{53}$'
   [ -n "$PA_DB" ] && [ -n "$PA_ID" ] && [ -n "$PA_FULL" ] && [ -n "$PA_RO" ] || return 1
   [[ "$PA_DB" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
   if [ -r "$f" ]; then
@@ -1723,10 +1818,10 @@ write_access_file() {
       printf "  'asked' => %s,\n" "$asked"
       printf "  'hash' => '%s',\n" "$hash"
       printf '];\n'
-    } > "$f.tmp"
+    } > "$tmp"
   ) || return 1
-  if id www-data >/dev/null 2>&1; then chown root:www-data "$f.tmp" && chmod 640 "$f.tmp"; else chmod 644 "$f.tmp"; fi
-  mv -f "$f.tmp" "$f"
+  if id www-data >/dev/null 2>&1; then chown root:www-data "$tmp" && chmod 640 "$tmp"; else chmod 644 "$tmp"; fi
+  mv -f "$tmp" "$f"
 }
 
 # On install/update: writes the switch's settings and, the first time, offers to set its password.
@@ -2088,9 +2183,20 @@ do_uninstall() {
   # 3. scripts and page
   rm -f "$CUSTOM/conlog.sh" "$CUSTOM/live.sh" "$CUSTOM/track.sh" "$CUSTOM/names.sh" "$CUSTOM/topology.php" "$CUSTOM/checkver.sh" "$CUSTOM/qrz.conf"
   rmdir "$CUSTOM" 2>/dev/null
+  # the Full control / Read-only switch goes away with the page: leave the panel on Read-only, never on Full control with no switch
+  local ro_set=0 adb aid aro
+  if [ -r "$WEB/$ACCESS" ] && command -v php >/dev/null 2>&1; then
+    read -r adb aid aro < <(php -r '$c = include $argv[1]; if (is_array($c) && isset($c["db"], $c["id"], $c["ro"])) echo $c["db"], " ", (int)$c["id"], " ", (int)$c["ro"], "\n";' "$WEB/$ACCESS" 2>/dev/null)
+    if [ -n "$aro" ] && [ -f "$adb" ]; then
+      case "$(app_level_write "$adb" "$aid" "$aro")" in
+        set|same) ro_set=1; note "panel set to Read-only (visitors can only look)" ;;
+        *) warn "could not set the panel to Read-only - check the visitor level in the app's own settings" ;;
+      esac
+    fi
+  fi
   if grep -q "$MARK" "$WEB/index.php" 2>/dev/null; then rm -rf "$WEB"; note "web page removed"; fi
 
-  rm -rf "$LOGDIR/stats-cache" "$LOGDIR/topology.json" "$LOGDIR/topology.lock" "$LOGDIR/keyed.txt" "$LOGDIR/keyed.tmp" "$LOGDIR/latest-version.txt" "$LOGDIR/latest-version.txt.tmp" 2>/dev/null
+  rm -rf "$LOGDIR/stats-cache" "$LOGDIR/topology.json" "$LOGDIR/topology.lock" "$LOGDIR/keyed.txt" "$LOGDIR/keyed.tmp" "$LOGDIR/monitor.txt" "$LOGDIR/monitor.tmp" "$LOGDIR/latest-version.txt" "$LOGDIR/latest-version.txt.tmp" 2>/dev/null
 
   # 4. history is only deleted when asked
   if [ -d "$LOGDIR" ]; then
@@ -2103,7 +2209,11 @@ do_uninstall() {
 
   say ""
   say "Connect Lookup has been removed. Other pages on this node, and your favorites, were not touched."
-  say "The app's visitor level (Full control or Read-only) was left as it is; you can change it in the app's own settings."
+  if [ "$ro_set" = 1 ]; then
+    say "The app's visitor level was set to Read-only; you can change it in the app's own settings."
+  else
+    say "The app's visitor level (Full control or Read-only) was left as it is; you can change it in the app's own settings."
+  fi
   say "Check:  sudo grep -n conlog $RPT   (no output is correct)"
 }
 

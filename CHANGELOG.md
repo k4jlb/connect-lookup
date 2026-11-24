@@ -3,6 +3,51 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-24 (version 1.5.13)
+- Changed: the faded yellow (M) now sits beside the node number on the left, so you
+  can see at a glance which station is only listening.
+- New: a station further out that is only listening to the node it comes through
+  (for example a station on Monitor to one of your linked hubs) now gets the (M) as
+  well, found the same way as in 1.5.12, from that station's own report on the
+  AllStarLink stats feed. On a busy node this can take a few minutes longer to show.
+- If you already installed 1.5.12 or 1.5.11, run this installer again. Your password
+  and your Full control / Read-only level are kept.
+
+## 2026-11-24 (version 1.5.12)
+- New: a station that is only listening to YOUR node (it connected to you with
+  Monitor) now gets the faded yellow (M) too. Your own node sees every incoming link
+  as a full link, so the page reads that station's own report on the AllStarLink
+  stats feed, where it lists its link to you as listen-only. The (M) can take a few
+  minutes to appear or clear. Stations that do not report to the stats feed
+  (EchoLink, web transceivers, some private nodes) show as normal connections.
+- If you already installed 1.5.11, run this installer again. Your password and your
+  Full control / Read-only level are kept.
+
+## 2026-11-24 (version 1.5.11)
+- New: stations connected listen-only (Monitor, or a local monitor) now show under
+  "Connected now". Before, a local-monitor link did not show at all.
+- New: a faded yellow (M) marks the station that is doing
+  the listening (your own monitored link, or a far station that is itself on
+  monitor). Stations merely heard through a monitored link are not marked.
+- Fixed: with the node-connect panel showing, rows could light up red by themselves
+  (for example on an ID or courtesy tone) when nobody on any link was talking. Every
+  linked station is now outlined only when your own node's receiver is keyed.
+- Fixed: the Full control password limit (5 tries, then a 5-minute wait) is now kept
+  per address and can no longer be got around by trying several passwords at once.
+  One visitor's wrong tries no longer lock out everyone else.
+- Fixed: the EchoLink name lookup now makes at most 30 web lookups an hour, so the
+  page cannot be used to flood EchoLink's lookup page.
+- Fixed: your QRZ password is no longer visible to other programs on the node while
+  a name is being looked up.
+- Fixed: removing Connect Lookup (--uninstall) now sets the node-connect app back to
+  Read-only instead of leaving it on Full control.
+- Fixed: the default favorites are no longer added again after you remove and
+  reinstall Connect Lookup, if you had deleted them.
+- Fixed: the installer finds the node-connect app's settings file more carefully and
+  never picks a backup copy.
+- If you already installed 1.5.10, run this installer again. Your password and your
+  Full control / Read-only level are kept.
+
 ## 2026-11-22 (version 1.5.10)
 - Fixed: on a node with several direct links, keying lit every direct link on the
   page whenever the panel showed "PTT Keyed", even when only one link was actually
