@@ -33,6 +33,47 @@ right now, and who connected during the last 24 hours. Built by K4JLB.
 It installs by typing one thing: **your own node number**. It does not touch
 any other page on your node, and you can remove it completely with one command.
 
+## BubbaWare quick install (one line)
+
+BubbaWare is the one-line way to install StumpyWare. You can use the one pasted
+line, or do it by hand: the step-by-step commands
+are in **Install** just below. Either way works, and both end in the same place.
+
+Log in to your node with SSH, then paste this single line and press Enter:
+
+```
+read -rp "Node number: " N; cd /tmp && curl -fLO https://raw.githubusercontent.com/k4jlb/stumpyware/main/install-connect-lookup.sh && sha256sum install-connect-lookup.sh && sudo bash install-connect-lookup.sh $N --check && read -rp "Install on node $N? [y/N] " a && [[ $a =~ ^[Yy]$ ]] && sudo bash install-connect-lookup.sh $N
+```
+
+What it does, in order:
+
+1. Asks for **your own node number**.
+2. Downloads the installer into `/tmp`.
+3. Prints the installer's fingerprint (the long line of letters and numbers).
+   **Compare it with the fingerprint shown under Install below.**
+4. Runs the look-only check, which changes nothing. (The line does not pause
+   before this step. If you want to compare the fingerprint before anything runs,
+   use the by-hand steps under Install instead.)
+5. Asks *Install on node ...? [y/N]*. If the fingerprint did not match, answer
+   **n** (or anything but y) and get the file again. Type **y** to go on.
+6. The installer itself asks once more (*Install StumpyWare for node ...?*). Type **y** again, and it installs.
+
+The **Panel switch password** question (see below) comes during step 6, only on
+a first install on a node that has the connect app. Type it twice; it is not
+shown. Press Enter to skip it, and the panel stays on Read-only until you set one
+later (see below). On an update it is not asked, because your saved password is kept. The
+password is never part of the one line, on purpose.
+
+To remove it later, see **Remove** below. It is one command (it asks you to type
+**y** first, and keeps your saved history):
+
+```
+sudo bash install-connect-lookup.sh --uninstall
+```
+
+(Run it from the folder that holds the installer, for example `cd /tmp` first
+if you used the one line.)
+
 ## Install
 
 Run these on your node (log in with SSH first). Replace `123456` with **your**
