@@ -1,4 +1,4 @@
-CONNECT LOOKUP  -  for AllStarLink 3 (ASL3) nodes
+STUMPYWARE  -  for AllStarLink 3 (ASL3) nodes  (formerly Connect Lookup)
 Built by K4JLB
 
 WHAT IT IS
@@ -22,9 +22,9 @@ right now, and who connected during the last 24 hours:
   - an OPTIONAL checkbox at the top of the page that also outlines, faintly,
     the stations behind that link while it is transmitting (off until you tick
     it - see "THE OPTIONAL OUTLINE CHECKBOX" below)
-  - an OPTIONAL panel on the right with your node's own connect / disconnect /
-    monitor / favorites page (off until you tick its checkbox; only offered if
-    that web app is already installed on your node - see "THE OPTIONAL PANEL")
+  - a panel on the right with your node's own connect / disconnect /
+    monitor / favorites page (always shown, but only if that web app is
+    already installed on your node - see "THE OPTIONAL PANEL")
   - a count beside each heading; the page refreshes itself every few seconds
 
 It installs by typing ONE thing: your own node number.
@@ -106,7 +106,7 @@ STEP 5 - Check only (changes NOTHING)
 STEP 6 - Install
     sudo bash install-connect-lookup.sh 123456
   It shows what it is going to do and asks:
-    Install Connect Lookup for node 123456?
+    Install StumpyWare for node 123456?
     Type  y  and press Enter to go ahead, or just press Enter to cancel:
   Type  y  and press Enter. If your node has the connect/disconnect web app, it
   then asks:
@@ -122,7 +122,7 @@ STEP 7 - Open the page
   In a web browser on any computer on your network, open the address it
   printed, for example:
     http://192.168.1.50/connect-lookup/
-  You should see "Connect Lookup - Node 123456" with two tables:
+  You should see "StumpyWare - Node 123456" with two tables:
   "Connected now" and "Last 24 hours". It starts empty and fills in.
 
 STEP 8 - Try it
@@ -158,7 +158,7 @@ IF SOMETHING GOES WRONG
       gave you this.
 
   "already exists and was not created by this installer"
-      You already have a hand-made Connect Lookup. It will not overwrite it.
+      You already have a hand-made StumpyWare. It will not overwrite it.
       Nothing was changed.
 
   "already has its own connpgm/discpgm lines"
@@ -176,13 +176,10 @@ IF SOMETHING GOES WRONG
 THE OPTIONAL PANEL ON THE RIGHT
 ==========================================================================
   If your node already has the web app where you connect, disconnect, monitor
-  and keep favorites, the installer finds it and adds a checkbox at the top of
-  the page:
+  and keep favorites, the installer finds it and the page always shows it in
+  a panel on the right (below the lists on a narrow screen or a phone).
 
-      [ ] Show the node-connect panel on the right
-
-  - It is OFF until you tick it. Each browser remembers its own choice.
-  - The panel shows that app beside Connect Lookup, so you can connect,
+  - The panel shows that app beside StumpyWare, so you can connect,
     disconnect, monitor, use DTMF and add, edit or delete favorites on one page.
     In the Favorites list the Name column shows just the callsign, and callsigns
     open their QRZ page (EchoLink ones are white).
@@ -195,12 +192,12 @@ THE OPTIONAL PANEL ON THE RIGHT
     defaults are added once, in a new favorites list; the sample file itself is
     not touched. Change or delete them any way you like. They are never put
     back, and updating this installer never touches your favorites. Removing
-    Connect Lookup leaves your favorites alone too.
+    StumpyWare leaves your favorites alone too.
 
 ==========================================================================
 THE FULL CONTROL / READ-ONLY SWITCH
 ==========================================================================
-  At the very top of the panel, right beside the word node-connect, there is a
+  At the very top of the panel there is a
   switch that shows either "Full control: ON" or "Full control: OFF (read-only)".
 
   - READ-ONLY: visitors can only look. A first install starts this way.
@@ -226,8 +223,8 @@ THE FULL CONTROL / READ-ONLY SWITCH
 ==========================================================================
 THE OPTIONAL OUTLINE CHECKBOX
 ==========================================================================
-  There is nothing to choose when you install. At the top of the page there are
-  two checkboxes (both start unticked). The first one:
+  There is nothing to choose when you install. At the top of the page there is
+  a checkbox (it starts unticked):
 
       [ ] Outline the stations behind a link while that link is transmitting
 
@@ -260,7 +257,7 @@ WHAT IT CHANGES ON YOUR NODE (and nothing else)
   - Adds 6 small scripts in /etc/asterisk/custom/
   - Adds a background service, a daily cleanup job (deletes logs over
     30 days old) and a daily version check. The version check reads one
-    line (the newest version number) from github.com/k4jlb/connect-lookup.
+    line (the newest version number) from github.com/k4jlb/stumpyware.
     If it is newer than yours, the "Version" line at the top of the page
     says so, with a red "get it on GitHub" link (to the project page)
     that fades slowly in and out. It only tells you; it never installs anything. To update, run the download and install steps again.
@@ -271,7 +268,7 @@ WHAT IT CHANGES ON YOUR NODE (and nothing else)
     missing.
   It does NOT touch any other page on your node. It refuses to
   continue if your node already uses connpgm/discpgm for something else, or if
-  it finds a Connect Lookup it did not install.
+  it finds a StumpyWare it did not install.
 
 GOOD TO KNOW
   - Anyone who can reach your node's web server can open the page, just like
@@ -294,5 +291,5 @@ VERIFY YOUR COPY (optional)
   On the node:
     sha256sum install-connect-lookup.sh
   should print:
-    c998d862e39399b2c6d7500128368ac07aa0ed3710407a6be5a8666bb917677b
+    62fb36a8e4774d1165970c85279d2394ca31231084223c85b384c9c5f0f67b3d
   You can also read the whole script in any text editor before running it.
