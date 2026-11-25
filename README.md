@@ -1,4 +1,8 @@
-# Connect Lookup for AllStarLink 3 (ASL3) nodes
+# StumpyWare for AllStarLink 3 (ASL3) nodes
+
+(Formerly called Connect Lookup. This GitHub page used to be github.com/k4jlb/connect-lookup,
+and that address still forwards here. The file names and the web address on your node
+stay the same, so nothing changes for nodes that already have it.)
 
 A web page on your own node that shows, live, who is connected to your node
 right now, and who connected during the last 24 hours. Built by K4JLB.
@@ -17,9 +21,9 @@ right now, and who connected during the last 24 hours. Built by K4JLB.
   letters above the title
 - An optional checkbox at the top of the page that also outlines, faintly, the
   stations behind that link while it is transmitting (off until you tick it)
-- An optional panel on the right with your node's own connect / disconnect /
-  monitor / favorites page, so you can do all of it on one page (off until you tick
-  its checkbox; only offered if that web app is already installed on your node)
+- A panel on the right with your node's own connect / disconnect / monitor /
+  favorites page, so you can do all of it on one page (always shown, but only if
+  that web app is already installed on your node)
 - A count beside each heading; the page refreshes itself every few seconds
 - A notice when a newer version is published here: once a day the node reads one
   line from this repository (`VERSION`), and if it is newer than the one you run,
@@ -37,15 +41,15 @@ node number. Each command goes on its own line; wait for it to finish.
 Download the installer (use whichever of the two works on your node):
 
 ```
-wget https://raw.githubusercontent.com/k4jlb/connect-lookup/main/install-connect-lookup.sh
+wget https://raw.githubusercontent.com/k4jlb/stumpyware/main/install-connect-lookup.sh
 ```
 
 ```
-curl -fLO https://raw.githubusercontent.com/k4jlb/connect-lookup/main/install-connect-lookup.sh
+curl -fLO https://raw.githubusercontent.com/k4jlb/stumpyware/main/install-connect-lookup.sh
 ```
 
 Check the download is intact. It should print exactly this:
-`c998d862e39399b2c6d7500128368ac07aa0ed3710407a6be5a8666bb917677b`
+`62fb36a8e4774d1165970c85279d2394ca31231084223c85b384c9c5f0f67b3d`
 
 ```
 sha256sum install-connect-lookup.sh
@@ -74,13 +78,10 @@ node number is the only thing that is filled in.
 ## The optional panel on the right
 
 If your node already has the web app where you connect, disconnect, monitor and
-keep favorites, the installer finds it (by what it contains) and adds a second
-checkbox at the top of the page:
+keep favorites, the installer finds it (by what it contains) and the page always
+shows it in a panel on the right (below the lists on a narrow screen or a phone).
 
-**[ ] Show the node-connect panel on the right**
-
-- It is **off** until you tick it, and each browser remembers its own choice.
-- The panel shows that app beside Connect Lookup, restyled to match, so you can
+- The panel shows that app beside StumpyWare, restyled to match, so you can
   connect, disconnect, monitor, use DTMF and add, edit or delete favorites without
   leaving the page. In the Favorites list the Name column shows just the callsign, and callsigns open their QRZ page in a new tab (EchoLink callsigns are shown in white so they are easy to tell apart). EchoLink favorites show the callsign. The CPU temperature is
   shown at the top right and refreshes every 10 seconds, in your local time.
@@ -90,12 +91,12 @@ checkbox at the top of the page:
   comes with the app, if it was never edited, does not count), a few default ones
   are added once, in a new favorites list; the sample file itself is not touched.
   Change or delete them any way you like: they are never put back, and updating
-  this installer never touches your favorites. Removing Connect Lookup leaves your
+  this installer never touches your favorites. Removing StumpyWare leaves your
   favorites alone too.
 
 ## The Full control / Read-only switch
 
-At the very top of the panel, right beside the word **node-connect**, there is a
+At the very top of the panel there is a
 switch: **Full control: ON** or **Full control: OFF (read-only)**.
 
 - **Read-only:** visitors can only look. This is how a first install starts.
@@ -126,8 +127,8 @@ switch: **Full control: ON** or **Full control: OFF (read-only)**.
 
 ## The optional outline checkbox
 
-There is nothing to choose when you install. At the top of the page there are two
-checkboxes (both start unticked). The first one:
+There is nothing to choose when you install. At the top of the page there is a
+checkbox (it starts unticked):
 
 **[ ] Outline the stations behind a link while that link is transmitting**
 
@@ -166,13 +167,13 @@ It puts `rpt.conf` back the way it was and keeps your saved history. Add
   nothing about your node is sent, and nothing is installed by it)
 - Adds two lines (`connpgm` and `discpgm`) to your node's section of
   `/etc/asterisk/rpt.conf`, after saving a backup copy next to it
-- If the node-connect panel is available: on a first install it sets the app's visitor
+- If the connect panel is available: on a first install it sets the app's visitor
   level to Read-only, and it adds `panel-access.php` (the switch's settings and
   the password hash) in the same page folder
 - Installs two small standard packages (`curl`, `php-cli`) only if missing
 
 It refuses to continue if your node already uses `connpgm`/`discpgm` for
-something else, or if it finds a hand-made Connect Lookup it did not install.
+something else, or if it finds a hand-made StumpyWare it did not install.
 
 ## Requirements
 

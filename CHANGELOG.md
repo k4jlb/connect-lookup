@@ -3,6 +3,24 @@
 Newest first. After you update, `sha256sum install-connect-lookup.sh` should
 match the checksum in README.md.
 
+## 2026-11-25 (version 1.5.16)
+- Changed: the name is now StumpyWare (formerly Connect Lookup). The page heading
+  shows it in bold, leaning right.
+- Changed: the word node-connect is no longer shown at the top of the right-hand
+  panel. The panel is part of StumpyWare, so it needs no name of its own.
+- Changed: the "Node Connection" heading over the connection table in the panel is
+  gone.
+- Changed: the "Show the node-connect panel on the right" checkbox is gone. On a
+  node that has the connect app, the panel is now always shown on the right (below
+  the lists on a narrow screen or a phone). Nodes without that app show no panel,
+  as before.
+- Changed: this GitHub page is now github.com/k4jlb/stumpyware (the old
+  connect-lookup address forwards here). The daily version check reads the new
+  address first and falls back to the old one.
+- Nothing else changed: same file names, web address, history and settings. If you
+  already installed an earlier version, run this installer again. Your password and
+  your Full control / Read-only level are kept.
+
 ## 2026-11-24 (version 1.5.13)
 - Changed: the faded yellow (M) now sits beside the node number on the left, so you
   can see at a glance which station is only listening.

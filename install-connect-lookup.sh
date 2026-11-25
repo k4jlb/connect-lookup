@@ -1,6 +1,6 @@
 #!/bin/bash
 # ======================================================================
-#  Connect Lookup - installer for AllStarLink 3 (ASL3) nodes
+#  StumpyWare - installer for AllStarLink 3 (ASL3) nodes
 #
 #  Adds a web page to your node that shows who is connected right now
 #  and who connected during the last 24 hours (callsign, name, QRZ link,
@@ -14,7 +14,7 @@
 # ======================================================================
 case "$(head -c 3000 "$0" 2>/dev/null)" in *$'\r'*) echo "This file was saved with Windows line endings. Fix it with:  sed -i 's/\r\$//' $0   and run it again."; exit 1;; esac # windows-line-ending guard
 
-VERSION="1.5.13"
+VERSION="1.5.16"
 MARK="connect-lookup-installer-v1"
 ACCESS="panel-access.php"   # the switch's settings and password hash, next to index.php (never published, never contains the plain password)
 CUSTOM=/etc/asterisk/custom
@@ -69,7 +69,7 @@ ask() {
 
 usage() {
   cat <<'EOF_USAGE'
-Connect Lookup installer
+StumpyWare installer
 
   Install:     sudo bash install-connect-lookup.sh YOURNODE
   Check only:  sudo bash install-connect-lookup.sh YOURNODE --check
@@ -81,8 +81,8 @@ Options:
   --qrz              also ask for your own free QRZ.com login, so names can be
                      found for callsigns outside the US (optional)
   --password         set or change the password for the panel's Full control /
-                     Read-only switch (the switch is at the top of the panel,
-                     beside the word node-connect). Needs Connect Lookup to be
+                     Read-only switch (the switch is at the top of the panel).
+                     Needs StumpyWare to be
                      installed already.
   --yes              do not ask for confirmation
   --uninstall        remove everything this installer added
@@ -483,9 +483,14 @@ emit_checkver() { cat <<'CL_EOF_CHECKVER'
 # Once a day: read the newest published version number from GitHub (a one-line file)
 # and save it for the page. Read-only notice: nothing is downloaded or installed.
 OUT="${CL_VEROUT:-/var/log/asterisk/node-history/latest-version.txt}"
-URL="${CL_VERURL:-https://raw.githubusercontent.com/k4jlb/connect-lookup/main/VERSION}"
-v=$(${CL_CURL:-curl} -fsS -m 20 -A ConnectLookup-versioncheck "$URL" 2>/dev/null | head -c 64 | head -n 1 | tr -d '\r[:space:]')
-if [[ $v =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
+URL="${CL_VERURL:-https://raw.githubusercontent.com/k4jlb/stumpyware/main/VERSION}"
+# the project's GitHub address before the StumpyWare name; asked only if the new address gives no answer
+OLDURL=""; [ -z "$CL_VERURL" ] && OLDURL="https://raw.githubusercontent.com/k4jlb/connect-lookup/main/VERSION"
+getv() { ${CL_CURL:-curl} -fsSL -m 20 -A ConnectLookup-versioncheck "$1" 2>/dev/null | head -c 64 | head -n 1 | tr -d '\r[:space:]'; }
+re='^[0-9]+(\.[0-9]+){1,3}$'
+v=$(getv "$URL")
+if ! [[ $v =~ $re ]] && [ -n "$OLDURL" ]; then v=$(getv "$OLDURL"); fi
+if [[ $v =~ $re ]]; then
   printf '%s\n' "$v" > "$OUT.tmp" && chmod 644 "$OUT.tmp" && mv -f "$OUT.tmp" "$OUT"
   echo "Newest published version: $v"
 else
@@ -498,7 +503,7 @@ CL_EOF_CHECKVER
 emit_unit_live() { cat <<'CL_EOF_UNIT1'
 # connect-lookup-installer-v1
 [Unit]
-Description=Connect Lookup live connected-node list
+Description=StumpyWare live connected-node list
 After=asterisk.service
 
 [Service]
@@ -515,7 +520,7 @@ CL_EOF_UNIT1
 emit_unit_clean_service() { cat <<'CL_EOF_UNIT2'
 # connect-lookup-installer-v1
 [Unit]
-Description=Connect Lookup - delete connection logs older than 30 days
+Description=StumpyWare - delete connection logs older than 30 days
 
 [Service]
 Type=oneshot
@@ -527,7 +532,7 @@ CL_EOF_UNIT2
 emit_unit_clean_timer() { cat <<'CL_EOF_UNIT3'
 # connect-lookup-installer-v1
 [Unit]
-Description=Daily cleanup of old Connect Lookup logs
+Description=Daily cleanup of old StumpyWare logs
 
 [Timer]
 OnCalendar=daily
@@ -541,7 +546,7 @@ CL_EOF_UNIT3
 emit_unit_ver_service() { cat <<'CL_EOF_UNIT4'
 # connect-lookup-installer-v1
 [Unit]
-Description=Connect Lookup - check for a newer published version
+Description=StumpyWare - check for a newer published version
 
 [Service]
 Type=oneshot
@@ -553,7 +558,7 @@ CL_EOF_UNIT4
 emit_unit_ver_timer() { cat <<'CL_EOF_UNIT5'
 # connect-lookup-installer-v1
 [Unit]
-Description=Daily check for a newer Connect Lookup version
+Description=Daily check for a newer StumpyWare version
 
 [Timer]
 OnCalendar=daily
@@ -977,10 +982,11 @@ if ($PANEL !== null) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Connect Lookup - Node @NODE@</title>
+<title>StumpyWare - Node @NODE@</title>
 <style>
 body{font:15px system-ui,sans-serif;background:#111;color:#e6e6e6;margin:0;padding:16px}
 h1{font-size:20px;margin:0 0 4px}
+.brand{font-weight:700;font-style:italic}
 h2{font-size:16px;margin:24px 0 8px;color:#9ecbff}
 .sub{color:#888;font-size:13px}
 table{border-collapse:collapse;width:100%;max-width:1100px}
@@ -1011,8 +1017,6 @@ body.wp #wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(380px,44%)
 body.wp #main{overflow-x:auto}
 #panel{display:none}
 body.wp #panel{display:flex;flex-direction:column;position:sticky;top:16px;height:calc(100vh - 32px);border:1px solid #2a2a2a;border-radius:6px;overflow:hidden;background:#161616}
-html.ph body.wp #panel{display:none}
-html.ph body.wp #wrap{display:block}
 #panelbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:6px 10px;border-bottom:1px solid #2a2a2a;font-size:13px;color:#999}
 #panelbar b{color:#9ecbff;font-weight:600}
 #panelbar button{background:none;border:0;padding:0;font:inherit;color:#7cc4ff;cursor:pointer}
@@ -1069,12 +1073,9 @@ h2{margin:18px 0 6px}
 <div id="wrap">
 <div id="main">
 <div class="sub" id="ver">Version @VERSION@</div>
-<h1>Connect Lookup - Node @NODE@</h1>
+<h1><span class="brand">StumpyWare</span> - Node @NODE@</h1>
 <div class="sub" id="status">Loading...</div>
 <div class="opt"><label><input type="checkbox" id="behindBox">Outline the stations behind a link while that link is transmitting</label></div>
-<?php if ($PANEL !== null): ?>
-<div class="opt"><label><input type="checkbox" id="panelBox">Show the node-connect panel on the right</label></div>
-<?php endif; ?>
 <div class="opt"><a href="https://stats.allstarlink.org/stats/@NODE@/networkMap" target="_blank" rel="noopener noreferrer">Network map for node @NODE@</a> (AllStarLink stats site)</div>
 <h2>Connected now <span id="nowCount"></span></h2>
 <table>
@@ -1089,13 +1090,12 @@ h2{margin:18px 0 6px}
 </div>
 <?php if ($PANEL !== null): $pe = htmlspecialchars($PANEL, ENT_QUOTES); ?>
 <aside id="panel">
-<div id="panelbar"><b>node-connect</b><button type="button" id="permBtn" hidden></button><form id="permForm" hidden><input type="password" id="permPw" placeholder="Switch password" autocomplete="off" maxlength="200"><button type="submit">OK</button><button type="button" id="permCancel">Cancel</button></form><span id="permMsg"></span><button type="button" id="panelReload">Reload</button></div>
-<iframe id="panelf" title="node-connect" src="<?php echo $pe; ?>"></iframe>
+<div id="panelbar"><button type="button" id="permBtn" hidden></button><form id="permForm" hidden><input type="password" id="permPw" placeholder="Switch password" autocomplete="off" maxlength="200"><button type="submit">OK</button><button type="button" id="permCancel">Cancel</button></form><span id="permMsg"></span><button type="button" id="panelReload">Reload</button></div>
+<iframe id="panelf" title="connect panel" src="<?php echo $pe; ?>"></iframe>
 </aside>
 <?php endif; ?>
 </div>
 <script>
-try { if (localStorage.getItem('cl-panel') !== '1') document.documentElement.className = 'ph'; } catch (e) {}
 var PANELCSS = <?php echo json_encode($PCSS, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
 var PANELJS = <?php echo json_encode($PJS, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
 var PANELREMOVE = <?php echo json_encode($PR, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?>;
@@ -1249,13 +1249,6 @@ function poll(){
 }
 (function(){ var b = $('behindBox'); b.checked = BEHIND; b.addEventListener('change', function(){ BEHIND = b.checked; try { localStorage.setItem('cl-behind', BEHIND ? '1' : '0'); } catch (e) {} applyKeyed(); }); })();
 (function(){
-  var b = $('panelBox'); if (!b) return;
-  var on = false; try { on = localStorage.getItem('cl-panel') === '1'; } catch (e) {}
-  b.checked = on;
-  b.addEventListener('change', function(){
-    document.documentElement.className = b.checked ? '' : 'ph';
-    try { localStorage.setItem('cl-panel', b.checked ? '1' : '0'); } catch (e) {}
-  });
   var r = $('panelReload'), f = $('panelf');
   if (r && f) r.addEventListener('click', function(){ f.src = f.getAttribute('src'); });
   if (!f) return;
@@ -1294,7 +1287,7 @@ function poll(){
   }
   if (PANELCSS || rx.length || PANELREMOVE.length || pfn) { setInterval(dress, 100); f.addEventListener('load', dress); }
 })();
-// Full control / Read-only switch (top of the panel, beside the word node-connect). Hidden unless the installer set it up on this node.
+// Full control / Read-only switch (top of the panel). Hidden unless the installer set it up on this node.
 (function(){
   var btn = $('permBtn'), form = $('permForm'), pw = $('permPw'), msg = $('permMsg');
   if (!btn || !form || !pw || !msg) return;
@@ -1368,15 +1361,15 @@ put() {
 }
 
 emit_panel_css() { cat <<'CL_EOF_PANEL_CSS'
-/* Restyles the right-hand panel to match the Connect Lookup page: black, same fonts and colors. */
+/* Restyles the right-hand panel to match the StumpyWare page: black, same fonts and colors. */
 html,body{background:#111 !important;color:#e6e6e6 !important;font:15px system-ui,sans-serif !important;scrollbar-color:#555 #111 !important}
 a{color:#7cc4ff !important}
 ::-webkit-scrollbar{background:#111 !important}
 ::-webkit-scrollbar-thumb{background:#555 !important}
 header{background:#111 !important;color:#9ecbff !important;border-bottom:1px solid #2a2a2a !important;border-radius:0 !important;font-size:0 !important}
 header a,header small{font-size:15px !important;margin-right:12px !important}
-/* the top line keeps only the name, version and node title: no login, logout, settings, users, touch screen or update links */
-header a[href*="/user/"],header a[href*="/cfg/"],header a[href*="/simple/"],header a[href*="github.com"]{display:none !important}
+/* the top line keeps only the version and node title (the app's name is not shown): no login, logout, settings, users, touch screen or update links */
+header a.logo,header a[href*="/user/"],header a[href*="/cfg/"],header a[href*="/simple/"],header a[href*="github.com"]{display:none !important}
 h1,h2,h3{color:#9ecbff !important}
 table.favs thead tr,table.grid thead tr{background:#111 !important}
 table.favs th,table.grid th{color:#999 !important;font-weight:600 !important;font-size:13px !important}
@@ -1418,7 +1411,7 @@ header{display:flex !important;align-items:center !important;flex-wrap:wrap !imp
 header small{display:none !important}
 a.cl-echo-call,a.cl-echo-call:visited{color:#ffffff !important}
 @media (max-width:600px){table.grid,table.favs,#nodeForm{width:100% !important;margin-left:0 !important;margin-right:0 !important}table.grid,table.favs{font-size:13px !important}.twrap{overflow-x:auto !important}}
-/* the app paints keyed rows plain maroon and the favorites number column pure red: both use the same red as the Connect Lookup page (faint maroon fill, thin red outline) */
+/* the app paints keyed rows plain maroon and the favorites number column pure red: both use the same red as the StumpyWare page (faint maroon fill, thin red outline) */
 table.grid tr.tColor td,table.grid tr.rColor td,table.grid tr.rColor td a{background-color:#2a1212 !important}
 table.grid tr.tColor td,table.grid tr.rColor td{color:#e6e6e6 !important;box-shadow:inset 0 2px 0 #a63636,inset 0 -2px 0 #a63636 !important}
 table.grid tr.tColor td:first-child,table.grid tr.rColor td:first-child{box-shadow:inset 2px 0 0 #a63636,inset 0 2px 0 #a63636,inset 0 -2px 0 #a63636 !important}
@@ -1436,7 +1429,6 @@ CL_EOF_PANEL_CSS
 emit_panel_js() { cat <<'CL_EOF_PANEL_JS'
 // Runs inside the right-hand panel as function(doc, data).
 // EchoLink stations (3 + their EchoLink number) in the Favorites list and the connection table: callsign in the name cell, and the leading 3 hidden on screen.
-var lg = doc.querySelector('header a.logo'); if (lg && lg.textContent !== 'node-connect') lg.textContent = 'node-connect';
 // a short note under the favorites buttons
 if (!doc.getElementById('cl-echo-note')) {
   var anchor = doc.querySelector('#nodeForm input[value="DTMF"]') || doc.querySelector('#nodeForm input[value="Edit Favorite"]');
@@ -1462,7 +1454,7 @@ if (!E) {
 }
 var known = {};
 if (data && data.sessions) for (var j = 0; j < data.sessions.length; j++) { var x = data.sessions[j]; if (x.call && /^3[0-9]{6}$/.test(String(x.node))) known[String(x.node)] = String(x.call).trim(); }
-// A callsign at the start of a name cell opens its QRZ page (same address Connect Lookup uses); -L / -R style endings are dropped for the address. A link the cell already had is replaced.
+// A callsign at the start of a name cell opens its QRZ page (same address StumpyWare uses); -L / -R style endings are dropped for the address. A link the cell already had is replaced.
 // In the Favorites list the Name column then shows only the callsign (the words after it are left out); other tables keep their text.
 function linkCall(cell) {
   if (cell.querySelector('a.cl-qrz')) return;
@@ -1594,7 +1586,7 @@ CL_EOF_PANEL_JS
 emit_panel_words() { cat <<'CL_EOF_PANEL_WORDS'
 # old|new   (shown text only, case does not matter);  a line with a TAB uses the TAB instead of | (for old text that contains a | mark)
  | 	
-Connection Status|Node Connection
+Connection Status|
 CL_EOF_PANEL_WORDS
 }
 
@@ -1632,7 +1624,7 @@ CL_EOF_FAVS
 }
 
 # ----------------------------------------------------------------------
-#  Optional right-hand panel (the node's own connect / favorites page, shown beside Connect Lookup)
+#  Optional right-hand panel (the node's own connect / favorites page, shown beside StumpyWare)
 # ----------------------------------------------------------------------
 # Finds the web app on this node that provides it, by what it contains (not by name). Prints its web path, e.g. /something/
 find_panel_app() {
@@ -1686,7 +1678,7 @@ seed_favorites() {
     fi
   elif [ ! -e "$d/favorites.ini" ]; then
     new="$d/favorites.ini"
-    { printf '; Default favorites from the Connect Lookup installer. Change or delete them freely - they are not put back.\n'
+    { printf '; Default favorites from the StumpyWare installer. Change or delete them freely - they are not put back.\n'
       printf '; The %%node%% template is replaced with your node number at run time.\n;\n[general]\n;\n'
       emit_fav_entries; } > "$new" && note "default favorites written to $new"
   fi
@@ -1759,7 +1751,7 @@ set_panel_access() {
 }
 
 # ----------------------------------------------------------------------
-#  Full control / Read-only switch (top of the panel, beside the word node-connect)
+#  Full control / Read-only switch (top of the panel)
 # ----------------------------------------------------------------------
 PW_HASH=""
 # Asks for the switch password twice, hidden. Sets PW_HASH to its bcrypt hash. Returns 1 if skipped or it could not be made.
@@ -1808,7 +1800,7 @@ write_access_file() {
     umask 077
     {
       printf '<?php\n'
-      printf '// %s - written by the Connect Lookup installer. Settings for the panel'"'"'s Full control / Read-only switch.\n' "$MARK"
+      printf '// %s - written by the StumpyWare installer. Settings for the panel'"'"'s Full control / Read-only switch.\n' "$MARK"
       printf '// It holds a password HASH only, never the password. Do not publish or share this file.\n'
       printf 'return [\n'
       printf "  'db' => '%s',\n" "$PA_DB"
@@ -1863,14 +1855,14 @@ setup_panel() {
   local app
   app=$(find_panel_app) || app=""
   if [ -z "$app" ]; then
-    note "the node-connect app was not found on this node - the panel stays off (run this installer again after you install it)"
+    note "the connect app was not found on this node - the panel stays off (run this installer again after you install it)"
     return 0
   fi
   if [ -e "$WEB/panel.txt" ]; then
     note "panel.txt already present - left alone"
   else
     printf '%s\n' "$app" > "$WEB/panel.txt" && chmod 644 "$WEB/panel.txt"
-    note "panel available ($app) - tick \"Show the node-connect panel\" at the top of the page"
+    note "panel available ($app) - it shows on the right of the page"
   fi
   local ad="/var/www/html$(printf '%s' "$app" | sed 's:/$::')"
   if [ -e "$WEB/$ACCESS" ]; then
@@ -1884,15 +1876,15 @@ setup_panel() {
   seed_favorites "$ad"
 }
 
-# --password: set or change the switch password on a node that already has Connect Lookup.
+# --password: set or change the switch password on a node that already has StumpyWare.
 do_password() {
   [ -f "$WEB/index.php" ] && grep -q "$MARK" "$WEB/index.php" 2>/dev/null \
-    || die "Connect Lookup is not installed on this node yet. Install it first:  sudo bash $0 YOURNODE"
+    || die "StumpyWare is not installed on this node yet. Install it first:  sudo bash $0 YOURNODE"
   command -v php >/dev/null 2>&1 || die "The PHP command-line program is missing. Install it with:  sudo apt install php-cli"
   id www-data >/dev/null 2>&1 || die "No www-data web user was found, so the switch cannot be used on this node."
   local app ad
   app=$(find_panel_app) || app=""
-  [ -n "$app" ] || die "The node-connect app was not found on this node, so there is no panel and no switch."
+  [ -n "$app" ] || die "The connect app was not found on this node, so there is no panel and no switch."
   ad="/var/www/html$(printf '%s' "$app" | sed 's:/$::')"
   panel_access_info "$ad" || die "Could not read the app's access setting or find its settings file."
   [ -n "$PA_RO" ] || die "This version of the app has no read-only level, so the switch cannot be used."
@@ -1901,7 +1893,7 @@ do_password() {
   write_access_file "$PW_HASH" || die "Could not save the switch settings."
   say ""
   say "Switch password saved. Browsers that had unlocked the switch with the old password"
-  say "must enter the new one. Open the panel and use the switch beside the word node-connect."
+  say "must enter the new one. Open the panel and use the switch at the top of it."
 }
 
 # ----------------------------------------------------------------------
@@ -1920,7 +1912,7 @@ preflight() {
   grep -q "^\[$NODE\]" "$RPT" || die "Node $NODE has no [$NODE] section in $RPT. Check the node number. (If your node is set up in a different file, tell the person who gave you this installer.)"
   note "Node $NODE found in rpt.conf"
 
-  command -v apache2ctl >/dev/null 2>&1 || die "The Apache web server was not found. Connect Lookup needs the web server your node already uses for its web pages."
+  command -v apache2ctl >/dev/null 2>&1 || die "The Apache web server was not found. StumpyWare needs the web server your node already uses for its web pages."
   [ -d /var/www/html ] || die "/var/www/html was not found."
   apache2ctl -M 2>/dev/null | grep -Eqi 'php[0-9._]*_module|proxy_fcgi_module' \
     || die "PHP does not seem to be enabled in Apache. Install it first (for example: sudo apt install php libapache2-mod-php) and run this again. Note: that can change how Apache is set up, so only do it if nothing else on this node depends on the current setup."
@@ -1962,14 +1954,14 @@ preflight() {
            "$UNITDIR/connect-lookup-clean.timer" "$UNITDIR/connect-lookup-checkver.service" \
            "$UNITDIR/connect-lookup-checkver.timer" "$WEB/index.php"; do
     if [ -e "$f" ] && ! grep -q "$MARK" "$f" 2>/dev/null; then
-      die "$f already exists and was not created by this installer (it looks like a hand-made Connect Lookup). I will not overwrite it."
+      die "$f already exists and was not created by this installer (it looks like a hand-made StumpyWare). I will not overwrite it."
     fi
   done
   if grep -q "$MARK" "$CUSTOM/live.sh" 2>/dev/null; then
     local prev
     prev=$(grep -o 'rpt nodes [0-9]*' "$CUSTOM/live.sh" 2>/dev/null | head -1 | awk '{print $3}')
     if [ -n "$prev" ] && [ "$prev" != "$NODE" ]; then
-      die "Connect Lookup is already installed here for node $prev. It supports one node per computer. To switch, remove it first:  sudo bash $0 --uninstall"
+      die "StumpyWare is already installed here for node $prev. It supports one node per computer. To switch, remove it first:  sudo bash $0 --uninstall"
     fi
     note "An earlier install by this installer was found - it will be updated"
   fi
@@ -1983,10 +1975,10 @@ preflight() {
     if printf '%s\n' "$other" | grep -qv 'conlog\.sh'; then
       die "The [$NODE] section of $RPT already has its own connpgm/discpgm lines:
 $other
-Connect Lookup needs those two settings. Combine them by hand (or ask the person who gave you this installer), then run this again."
+StumpyWare needs those two settings. Combine them by hand (or ask the person who gave you this installer), then run this again."
     fi
     RPT_DONE=1
-    note "rpt.conf already has the Connect Lookup logging lines"
+    note "rpt.conf already has the StumpyWare logging lines"
   fi
 }
 
@@ -2113,7 +2105,7 @@ do_install() {
   fi
 
   say ""
-  say "Done. Connect Lookup is installed for node $NODE."
+  say "Done. StumpyWare is installed for node $NODE."
   say ""
   say "Open it in a browser at one of these addresses:"
   print_addresses
@@ -2133,14 +2125,14 @@ do_install() {
     say "    until you add a free QRZ.com login:  sudo bash $0 $NODE --qrz"
   fi
   say "  - Your original rpt.conf was saved next to it (rpt.conf.bak-connect-lookup-*)."
-  say "  - Optional: at the top of the page there are two checkboxes, \"Outline the stations"
-  say "    behind a link while that link is transmitting\" and \"Show the node-connect panel"
-  say "    on the right\". Both are off until you tick them; each browser remembers its own choice."
-  say "  - If the node-connect app is installed here, the panel shows it beside this page, and a"
+  say "  - Optional: at the top of the page there is a checkbox, \"Outline the stations"
+  say "    behind a link while that link is transmitting\". It is off until you tick it;"
+  say "    each browser remembers its own choice."
+  say "  - If the connect app is installed here, the panel shows it beside this page, and a"
   say "    few default favorites are added once if you have none. Change or delete them freely;"
   say "    they are never put back, and updating this installer never touches your favorites."
   if [ -e "$WEB/$ACCESS" ]; then
-    say "  - At the top of the panel, beside the word node-connect, is a Full control / Read-only"
+    say "  - At the top of the panel is a Full control / Read-only"
     say "    switch. Full control lets visitors connect, disconnect, monitor and use favorites;"
     say "    Read-only lets them only look. It starts on Read-only. Turning Full control on asks for the"
     say "    switch password; turning it off does not, and locks it again."
@@ -2157,10 +2149,10 @@ do_install() {
 #  Uninstall
 # ----------------------------------------------------------------------
 do_uninstall() {
-  say "Removing Connect Lookup..."
+  say "Removing StumpyWare..."
   [ -f "$CUSTOM/live.sh" ] && grep -q "$MARK" "$CUSTOM/live.sh" \
-    || die "Connect Lookup was not installed by this installer on this node (no marker found), so I will not remove anything."
-  ask "Remove Connect Lookup from this node?" || cancelled
+    || die "StumpyWare was not installed by this installer on this node (no marker found), so I will not remove anything."
+  ask "Remove StumpyWare from this node?" || cancelled
   CHANGED=1
 
   # 1. stop Asterisk calling the logging script, then reload
@@ -2208,7 +2200,7 @@ do_uninstall() {
   fi
 
   say ""
-  say "Connect Lookup has been removed. Other pages on this node, and your favorites, were not touched."
+  say "StumpyWare has been removed. Other pages on this node, and your favorites, were not touched."
   if [ "$ro_set" = 1 ]; then
     say "The app's visitor level was set to Read-only; you can change it in the app's own settings."
   else
@@ -2249,7 +2241,7 @@ fi
 [ -n "$NODE" ] || { usage; die "Please give your node number, for example:  sudo bash $0 123456"; }
 [[ "$NODE" =~ ^[0-9]{3,7}$ ]] || die "'$NODE' does not look like a node number."
 
-say "Connect Lookup installer $VERSION - node $NODE"
+say "StumpyWare installer $VERSION - node $NODE"
 say ""
 preflight
 
@@ -2261,15 +2253,15 @@ fi
 
 say ""
 say "This will:"
-say "  1. Put the web page in $WEB (with an optional panel beside it if the node-connect app is installed)"
+say "  1. Put the web page in $WEB (with an optional panel beside it if the connect app is installed)"
 say "  2. Add six small helper scripts in $CUSTOM"
 say "  3. Add a background service, a daily cleanup job and a daily version check (systemd)"
 say "  4. Add two lines (connpgm and discpgm) to the [$NODE] section of"
 say "     $RPT, after saving a backup copy, and reload app_rpt"
 say "  5. Add a Full control / Read-only switch at the top of the panel and offer to set its"
 say "     password (press Enter to skip). On a first install the app's visitor level is set to Read-only."
-say "Nothing else is changed. node-connect and your other pages are left alone."
+say "Nothing else is changed. The connect app and your other pages are left alone."
 say ""
-ask "Install Connect Lookup for node $NODE?" || cancelled
+ask "Install StumpyWare for node $NODE?" || cancelled
 
 do_install
