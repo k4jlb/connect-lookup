@@ -58,7 +58,8 @@ What it does, in order:
    **n** (or anything but y) and get the file again. Type **y** to go on.
 6. The installer itself asks once more (*Install StumpyWare for node ...?*). Type **y** again, and it installs.
 
-The **Panel switch password** question (see below) comes during step 6, only on
+The **connect / disconnect password** question (the installer calls it the
+**Panel switch password**; see below) comes during step 6, only on
 a first install on a node that has the connect app. Type it twice; it is not
 shown. Press Enter to skip it, and the panel stays on Read-only until you set one
 later (see below). On an update it is not asked, because your saved password is kept. The
@@ -73,6 +74,32 @@ sudo bash install-connect-lookup.sh --uninstall
 
 (Run it from the folder that holds the installer, for example `cd /tmp` first
 if you used the one line.)
+
+To update, or to change the connect / disconnect password:
+
+- **Update:** paste the same one line again and give the same node number as
+  before. It finds your existing install, updates it in place, and keeps your
+  saved history, your password and your Full control / Read-only setting. If the
+  connect / disconnect password was already set up, it does not ask for it
+  again. You answer the two y questions as before.
+- **Change the connect / disconnect password** (the one that lets visitors
+  connect, disconnect, monitor and use favorites; the installer calls it the
+  panel switch password): the installer is only kept in `/tmp` until
+  the node reboots or `/tmp` is cleaned. If it is still there, you can skip the
+  download and run just the second command. Otherwise run both, in this order.
+  Type the new password twice; it is not shown.
+
+  ```
+  cd /tmp && curl -fLO https://raw.githubusercontent.com/k4jlb/stumpyware/main/install-connect-lookup.sh
+  ```
+
+  ```
+  sudo bash install-connect-lookup.sh --password
+  ```
+
+  If the installer is no longer in `/tmp`, run the download command above before
+  the remove command as well. If curl says it cannot write the file,
+  run `rm -f /tmp/install-connect-lookup.sh` and try again.
 
 ## Install
 
